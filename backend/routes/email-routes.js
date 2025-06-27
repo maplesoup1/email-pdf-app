@@ -139,12 +139,12 @@ router.post('/convert-latest', async (req, res) => {
                 
             case 'merged':
                 if (!hasPdfAttachment) {
-                    return res.status(400).json({
-                        success: false,
-                        error: '最新邮件没有PDF附件，无法进行合并'
-                    });
+                    console.log('最新邮件没有PDF附件，自动降级为仅邮件模式');
+                    result = await generateEmailOnlyPdf(email, attachments, downloadDir);
+                    result.mode = 'merged_fallback';
+                } else {
+                    result = await generateMergedPdf(email, attachments, downloadDir, attachmentsDir);
                 }
-                result = await generateMergedPdf(email, attachments, downloadDir, attachmentsDir);
                 break;
                 
             case 'auto':
@@ -216,12 +216,12 @@ router.post('/convert/:messageId', async (req, res) => {
                 
             case 'merged':
                 if (!hasPdfAttachment) {
-                    return res.status(400).json({
-                        success: false,
-                        error: '此邮件没有PDF附件，无法进行合并'
-                    });
+                    console.log('没有PDF附件，自动降级为仅邮件模式');
+                    result = await generateEmailOnlyPdf(email, attachments, downloadDir);
+                    result.mode = 'merged_fallback';
+                } else {
+                    result = await generateMergedPdf(email, attachments, downloadDir, attachmentsDir);
                 }
-                result = await generateMergedPdf(email, attachments, downloadDir, attachmentsDir);
                 break;
                 
             case 'auto':

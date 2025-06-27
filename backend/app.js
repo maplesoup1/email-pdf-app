@@ -7,6 +7,7 @@ const fs = require('fs');
 const emailRoutes = require('./routes/email-routes');
 const attachmentRoutes = require('./routes/attachment-routes');
 const statusRoutes = require('./routes/status-routes');
+const demergeRoutes = require('./routes/demerge-routes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -29,6 +30,7 @@ if (!fs.existsSync(attachmentsDir)) {
 app.use('/api/emails', emailRoutes);
 app.use('/api/attachments', attachmentRoutes);
 app.use('/api/status', statusRoutes);
+app.use('/api/demerge', demergeRoutes);
 
 app.get('/api', (req, res) => {
     res.json({
