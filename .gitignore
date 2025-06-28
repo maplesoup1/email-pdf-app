@@ -27,3 +27,6 @@ token.json
 
 # VS Code settings (optional)
 .vscode/
+
+outlook-config.json
+outlook-token.json

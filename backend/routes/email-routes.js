@@ -1,26 +1,27 @@
 const express = require('express');
 const router = express.Router();
 const EmailProcessor = require('../services/email-processor');
-const GmailService = require('../services/gmail-service');
+const EmailProviderService = require('../services/email-provider-service');
 const AttachmentService = require('../services/attachment-service');
 const fs = require('fs');
 const path = require('path');
 
-const emailProcessor = new EmailProcessor();
-const gmailService = new GmailService();
+const emailProviderService = new EmailProviderService();
 const attachmentService = new AttachmentService();
 
 router.get('/latest', async (req, res) => {
     try {
-        const email = await gmailService.getLatestEmail();
-        const attachments = attachmentService.detectAttachments(email.payload);
+        const { provider } = req.query;
+        const email = await emailProviderService.getLatestEmail(provider);
+        const attachments = await emailProviderService.getAttachments(email.messageId, provider);
         
         res.json({
             success: true,
             data: {
                 ...email,
                 attachments,
-                hasPdfAttachment: attachmentService.hasPdfAttachment(attachments)
+                hasPdfAttachment: attachmentService.hasPdfAttachment(attachments),
+                provider: provider || emailProviderService.getCurrentProvider()
             }
         });
     } catch (error) {
@@ -33,41 +34,14 @@ router.get('/latest', async (req, res) => {
 
 router.get('/list', async (req, res) => {
     try {
-        const { maxResults = 10, pageToken } = req.query;
-        await gmailService.authenticate();
-        
-        const listResponse = await gmailService.gmail.users.messages.list({
-            userId: 'me',
-            maxResults: parseInt(maxResults),
-            pageToken
-        });
-        
-        const emails = [];
-        if (listResponse.data.messages) {
-            for (const message of listResponse.data.messages) {
-                const messageResponse = await gmailService.gmail.users.messages.get({
-                    userId: 'me',
-                    id: message.id,
-                    format: 'metadata',
-                    metadataHeaders: ['Subject', 'From', 'Date']
-                });
-                
-                const headers = messageResponse.data.payload.headers;
-                emails.push({
-                    messageId: message.id,
-                    subject: headers.find(h => h.name === 'Subject')?.value || '',
-                    from: headers.find(h => h.name === 'From')?.value || '',
-                    date: headers.find(h => h.name === 'Date')?.value || '',
-                    snippet: messageResponse.data.snippet
-                });
-            }
-        }
+        const { maxResults = 10, pageToken, provider } = req.query;
+        const emailData = await emailProviderService.getEmailList(parseInt(maxResults), provider);
         
         res.json({
             success: true,
             data: {
-                emails,
-                nextPageToken: listResponse.data.nextPageToken
+                ...emailData,
+                provider: provider || emailProviderService.getCurrentProvider()
             }
         });
     } catch (error) {
@@ -81,23 +55,18 @@ router.get('/list', async (req, res) => {
 router.get('/:messageId', async (req, res) => {
     try {
         const { messageId } = req.params;
-        await gmailService.authenticate();
+        const { provider } = req.query;
         
-        const messageResponse = await gmailService.gmail.users.messages.get({
-            userId: 'me',
-            id: messageId,
-            format: 'full'
-        });
-        
-        const email = gmailService.parseEmailMessage(messageResponse.data);
-        const attachments = attachmentService.detectAttachments(email.payload);
+        const email = await emailProviderService.getEmailById(messageId, provider);
+        const attachments = await emailProviderService.getAttachments(messageId, provider);
         
         res.json({
             success: true,
             data: {
                 ...email,
                 attachments,
-                hasPdfAttachment: attachmentService.hasPdfAttachment(attachments)
+                hasPdfAttachment: attachmentService.hasPdfAttachment(attachments),
+                provider: provider || emailProviderService.getCurrentProvider()
             }
         });
     } catch (error) {
@@ -110,10 +79,10 @@ router.get('/:messageId', async (req, res) => {
 
 router.post('/convert-latest', async (req, res) => {
     try {
-        const { mode = 'merged', attachmentTypes = [] } = req.body;
+        const { mode = 'merged', attachmentTypes = [], provider } = req.body;
         
-        const email = await gmailService.getLatestEmail();
-        const attachments = attachmentService.detectAttachments(email.payload);
+        const email = await emailProviderService.getLatestEmail(provider);
+        const attachments = await emailProviderService.getAttachments(email.messageId, provider);
         const hasPdfAttachment = attachmentService.hasPdfAttachment(attachments);
         
         const downloadDir = path.join(__dirname, '../downloads');
@@ -134,7 +103,7 @@ router.post('/convert-latest', async (req, res) => {
                 break;
                 
             case 'attachments_only':
-                result = await downloadAttachmentsOnly(email, attachments, attachmentsDir, attachmentTypes);
+                result = await downloadAttachmentsOnly(email, attachments, attachmentsDir, attachmentTypes, provider);
                 break;
                 
             case 'merged':
@@ -143,14 +112,14 @@ router.post('/convert-latest', async (req, res) => {
                     result = await generateEmailOnlyPdf(email, attachments, downloadDir);
                     result.mode = 'merged_fallback';
                 } else {
-                    result = await generateMergedPdf(email, attachments, downloadDir, attachmentsDir);
+                    result = await generateMergedPdf(email, attachments, downloadDir, attachmentsDir, provider);
                 }
                 break;
                 
             case 'auto':
             default:
                 if (hasPdfAttachment) {
-                    result = await generateMergedPdf(email, attachments, downloadDir, attachmentsDir);
+                    result = await generateMergedPdf(email, attachments, downloadDir, attachmentsDir, provider);
                 } else {
                     result = await generateEmailOnlyPdf(email, attachments, downloadDir);
                 }
@@ -165,7 +134,8 @@ router.post('/convert-latest', async (req, res) => {
                 mode: result.mode,
                 files: result.files,
                 attachmentCount: attachments.length,
-                pdfAttachmentCount: attachments.filter(a => a.isPdf).length
+                pdfAttachmentCount: attachments.filter(a => a.isPdf).length,
+                provider: provider || emailProviderService.getCurrentProvider()
             }
         });
     } catch (error) {
@@ -179,18 +149,10 @@ router.post('/convert-latest', async (req, res) => {
 router.post('/convert/:messageId', async (req, res) => {
     try {
         const { messageId } = req.params;
-        const { mode = 'merged', attachmentTypes = [] } = req.body;
+        const { mode = 'merged', attachmentTypes = [], provider } = req.body;
         
-        await gmailService.authenticate();
-        
-        const messageResponse = await gmailService.gmail.users.messages.get({
-            userId: 'me',
-            id: messageId,
-            format: 'full'
-        });
-        
-        const email = gmailService.parseEmailMessage(messageResponse.data);
-        const attachments = attachmentService.detectAttachments(email.payload);
+        const email = await emailProviderService.getEmailById(messageId, provider);
+        const attachments = await emailProviderService.getAttachments(messageId, provider);
         const hasPdfAttachment = attachmentService.hasPdfAttachment(attachments);
         
         const downloadDir = path.join(__dirname, '../downloads');
@@ -211,7 +173,7 @@ router.post('/convert/:messageId', async (req, res) => {
                 break;
                 
             case 'attachments_only':
-                result = await downloadAttachmentsOnly(email, attachments, attachmentsDir, attachmentTypes);
+                result = await downloadAttachmentsOnly(email, attachments, attachmentsDir, attachmentTypes, provider);
                 break;
                 
             case 'merged':
@@ -220,14 +182,14 @@ router.post('/convert/:messageId', async (req, res) => {
                     result = await generateEmailOnlyPdf(email, attachments, downloadDir);
                     result.mode = 'merged_fallback';
                 } else {
-                    result = await generateMergedPdf(email, attachments, downloadDir, attachmentsDir);
+                    result = await generateMergedPdf(email, attachments, downloadDir, attachmentsDir, provider);
                 }
                 break;
                 
             case 'auto':
             default:
                 if (hasPdfAttachment) {
-                    result = await generateMergedPdf(email, attachments, downloadDir, attachmentsDir);
+                    result = await generateMergedPdf(email, attachments, downloadDir, attachmentsDir, provider);
                 } else {
                     result = await generateEmailOnlyPdf(email, attachments, downloadDir);
                 }
@@ -242,7 +204,8 @@ router.post('/convert/:messageId', async (req, res) => {
                 mode: result.mode,
                 files: result.files,
                 attachmentCount: attachments.length,
-                pdfAttachmentCount: attachments.filter(a => a.isPdf).length
+                pdfAttachmentCount: attachments.filter(a => a.isPdf).length,
+                provider: provider || emailProviderService.getCurrentProvider()
             }
         });
     } catch (error) {
@@ -271,10 +234,7 @@ async function generateEmailOnlyPdf(email, attachments, downloadDir) {
     };
 }
 
-async function downloadAttachmentsOnly(email, attachments, attachmentsDir, attachmentTypes) {
-    const gmail = new GmailService();
-    await gmail.authenticate();
-    
+async function downloadAttachmentsOnly(email, attachments, attachmentsDir, attachmentTypes, provider) {
     let filteredAttachments = attachments;
     
     if (attachmentTypes.length > 0) {
@@ -296,11 +256,12 @@ async function downloadAttachmentsOnly(email, attachments, attachmentsDir, attac
     
     for (const attachment of filteredAttachments) {
         try {
-            const filePath = await gmail.downloadAttachment(
+            const filePath = await emailProviderService.downloadAttachment(
                 email.messageId,
                 attachment.attachmentId,
                 attachment.filename,
-                attachmentsDir
+                attachmentsDir,
+                provider
             );
             
             downloadedFiles.push({
@@ -322,12 +283,12 @@ async function downloadAttachmentsOnly(email, attachments, attachmentsDir, attac
     };
 }
 
-async function generateMergedPdf(email, attachments, downloadDir, attachmentsDir) {
+async function generateMergedPdf(email, attachments, downloadDir, attachmentsDir, provider) {
     const emailProcessor = new EmailProcessor();
     const fileName = emailProcessor.pdfService.generateSafeFileName(email.subject + '_merged', email.messageId);
     const outputPath = path.join(downloadDir, fileName);
     
-    const result = await emailProcessor.generateMergedPdf(email, attachments, outputPath, attachmentsDir);
+    const result = await emailProcessor.generateMergedPdf(email, attachments, outputPath, attachmentsDir, provider);
     
     return {
         mode: 'merged',

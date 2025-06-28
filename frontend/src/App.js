@@ -369,14 +369,14 @@ function App() {
 
   const getAuthStatusText = () => {
     const statusMap = {
-      'authenticated': '✅ 已认证',
-      'not_configured': '❌ 未配置',
-      'credentials_only': '⚠️ 需要授权',
-      'auth_failed': '❌ 认证失败',
-      'checking': '🔄 检查中...',
-      'error': '❌ 检查失败'
+      'authenticated': 'authenticated',
+      'not_configured': '❌ not_configured',
+      'credentials_only': '⚠️ credentials_only',
+      'auth_failed': '❌ auth_failed',
+      'checking': '🔄 checking',
+      'error': '❌ error'
     };
-    return statusMap[authStatus] || '未知状态';
+    return statusMap[authStatus] || 'Unknown status';
   };
 
   return (
@@ -418,7 +418,7 @@ function App() {
             </div>
             <div className="stat-item">
               <span className="stat-number">{systemStats.convertedEmails || '-'}</span>
-              <span className="stat-label">Convert Email</span>
+              <span className="stat-label">Converted Email</span>
             </div>
             <div className="stat-item">
               <span className="stat-number">{systemStats.attachmentFiles || '-'}</span>
@@ -470,7 +470,7 @@ function App() {
                       checked={convertMode === 'merged'}
                       onChange={(e) => setConvertMode(e.target.value)}
                     />
-                    <span>邮件+PDF附件合并 (默认，无PDF时仅邮件)</span>
+                    <span>Merge email + PDF attachments (default)</span>
                   </label>
                   <label className="mode-option">
                     <input 
@@ -480,7 +480,7 @@ function App() {
                       checked={convertMode === 'email_only'}
                       onChange={(e) => setConvertMode(e.target.value)}
                     />
-                    <span>仅邮件内容转PDF</span>
+                    <span>Email to pdf only</span>
                   </label>
                   <label className="mode-option">
                     <input 
@@ -490,14 +490,14 @@ function App() {
                       checked={convertMode === 'attachments_only'}
                       onChange={(e) => setConvertMode(e.target.value)}
                     />
-                    <span>仅下载附件</span>
+                    <span>Attachment only</span>
                   </label>
                 </div>
 
                 {/* 附件类型选择 */}
                 {convertMode === 'attachments_only' && (
                   <div className="attachment-types">
-                    <h5>附件类型</h5>
+                    <h5>Attachment Type</h5>
                     <div className="type-checkboxes">
                       {['pdf', 'images', 'documents', 'others'].map(type => (
                         <label key={type} className="type-checkbox">
@@ -514,10 +514,10 @@ function App() {
                             }}
                           />
                           <span>
-                            {type === 'pdf' && 'PDF文件'}
-                            {type === 'images' && '图片'}
-                            {type === 'documents' && '文档'}
-                            {type === 'others' && '其他'}
+                            {type === 'pdf' && 'PDF'}
+                            {type === 'images' && 'Image'}
+                            {type === 'documents' && 'Document'}
+                            {type === 'others' && 'Other'}
                           </span>
                         </label>
                       ))}
@@ -531,7 +531,7 @@ function App() {
               {emails.length === 0 ? (
                 <div className="empty-state">
                   <i className="fas fa-envelope fa-3x"></i>
-                  <p>点击"刷新邮件"加载邮件列表</p>
+                  <p>Click refresh to load emial massage</p>
                 </div>
               ) : (
                 emails.map((email) => (
@@ -551,7 +551,7 @@ function App() {
 
           {/* 操作面板 */}
           <div className="card">
-            <h3><i className="fas fa-cogs"></i> 操作面板</h3>
+            <h3><i className="fas fa-cogs"></i> Operation panel</h3>
             <div className="button-group">
               <button 
                 className="btn" 
@@ -566,7 +566,7 @@ function App() {
                 disabled={loading.downloads}
               >
                 {loading.downloads ? <span className="loading"></span> : <i className="fas fa-download"></i>}
-                查看下载
+                check downlaod
               </button>
               <button 
                 className="btn" 
@@ -577,7 +577,7 @@ function App() {
                 disabled={loading.mergedFiles}
               >
                 {loading.mergedFiles ? <span className="loading"></span> : <i className="fas fa-scissors"></i>}
-                PDF分离 {showDemergePanel ? '▲' : '▼'}
+                PDF demerge {showDemergePanel ? '▲' : '▼'}
               </button>
               <button 
                 className="btn btn-danger" 
@@ -585,19 +585,19 @@ function App() {
                 disabled={loading.cleanup}
               >
                 {loading.cleanup ? <span className="loading"></span> : <i className="fas fa-trash"></i>}
-                清理文件
+                Clean cache
               </button>
             </div>
 
             {/* 选中邮件信息 */}
             {selectedEmail && (
               <div className="selected-email-info">
-                <h4>选中邮件信息</h4>
+                <h4>Selected email message</h4>
                 <div className="email-details">
-                  <div><strong>主题:</strong> {selectedEmail.subject}</div>
-                  <div><strong>发件人:</strong> {selectedEmail.from}</div>
-                  <div><strong>日期:</strong> {formatDate(selectedEmail.date)}</div>
-                  <div><strong>预览:</strong> {selectedEmail.snippet}</div>
+                  <div><strong>Topic:</strong> {selectedEmail.subject}</div>
+                  <div><strong>Sender:</strong> {selectedEmail.from}</div>
+                  <div><strong>Date:</strong> {formatDate(selectedEmail.date)}</div>
+                  <div><strong>Preview:</strong> {selectedEmail.snippet}</div>
                 </div>
                 <div className="button-group">
                   <button 
@@ -606,7 +606,7 @@ function App() {
                     disabled={loading.convertSelected}
                   >
                     {loading.convertSelected ? <span className="loading"></span> : <i className="fas fa-file-pdf"></i>}
-                    转换此邮件
+                    Convert this email
                   </button>
                   <button 
                     className="btn" 
@@ -614,7 +614,7 @@ function App() {
                     disabled={loading.attachments}
                   >
                     {loading.attachments ? <span className="loading"></span> : <i className="fas fa-paperclip"></i>}
-                    查看附件
+                    View attachment
                   </button>
                 </div>
               </div>
@@ -623,7 +623,7 @@ function App() {
             {/* 附件列表 */}
             {attachments.length > 0 && (
               <div className="attachments-section">
-                <h4>附件列表 ({attachments.length}个, {attachments.filter(a => a.isPdf).length}个PDF)</h4>
+                <h4>Attachment list ({attachments.length}个, {attachments.filter(a => a.isPdf).length}个PDF)</h4>
                 {attachments.map(att => (
                   <div key={att.attachmentId} className="download-item">
                     <div className="download-info">
@@ -635,7 +635,7 @@ function App() {
                         className="btn" 
                         onClick={() => downloadAttachment(att.attachmentId, att.filename)}
                       >
-                        <i className="fas fa-download"></i> 下载
+                        <i className="fas fa-download"></i> Download
                       </button>
                     </div>
                   </div>
@@ -646,13 +646,13 @@ function App() {
             {/* PDF分离面板 */}
             {showDemergePanel && (
               <div className="demerge-panel">
-                <h4>PDF分离功能</h4>
-                <p>将合并的PDF文件分离回原始的邮件内容和附件</p>
+                <h4>PDF demerge</h4>
+                <p>demerge</p>
                 
                 {mergedFiles.length === 0 ? (
                   <div className="empty-state">
                     <i className="fas fa-file-pdf fa-2x"></i>
-                    <p>没有找到合并的PDF文件</p>
+                    <p>Merged file not found</p>
                   </div>
                 ) : (
                   <div className="merged-files-list">
@@ -676,7 +676,7 @@ function App() {
                             {loading.analyze && selectedMergedFile?.filename === file.filename ? 
                               <span className="loading"></span> : <i className="fas fa-search"></i>
                             }
-                            分析
+                            check
                           </button>
                           <button 
                             className="btn btn-success btn-small" 
@@ -695,10 +695,10 @@ function App() {
                 {/* 分离设置 */}
                 {selectedMergedFile && (
                   <div className="demerge-settings">
-                    <h5>分离设置 - {selectedMergedFile.filename}</h5>
+                    <h5>Demerge setting - {selectedMergedFile.filename}</h5>
                     <div className="setting-group">
                       <label>
-                        邮件页数:
+                        Email page number:
                         <input 
                           type="number" 
                           min="1" 
@@ -712,12 +712,12 @@ function App() {
                     </div>
                     
                     <div className="attachment-settings">
-                      <label>附件信息:</label>
+                      <label>Attachment information:</label>
                       {demergeSettings.attachmentInfo.map((att, index) => (
                         <div key={index} className="attachment-setting">
                           <input 
                             type="text" 
-                            placeholder="附件名称"
+                            placeholder="Attachment name"
                             value={att.originalName}
                             onChange={(e) => {
                               const newAttachments = [...demergeSettings.attachmentInfo];
@@ -730,7 +730,7 @@ function App() {
                           />
                           <input 
                             type="number" 
-                            placeholder="页数"
+                            placeholder="page"
                             min="1"
                             value={att.pageCount}
                             onChange={(e) => {
@@ -752,7 +752,7 @@ function App() {
                               });
                             }}
                           >
-                            删除
+                            Delete
                           </button>
                         </div>
                       ))}
@@ -768,7 +768,7 @@ function App() {
                           });
                         }}
                       >
-                        <i className="fas fa-plus"></i> 添加附件
+                        <i className="fas fa-plus"></i> Add attachment
                       </button>
                     </div>
                   </div>
@@ -779,7 +779,7 @@ function App() {
             {/* 下载文件列表 */}
             {downloads.length > 0 && (
               <div className="downloads-section">
-                <h4>下载文件 (共{downloads.length}个)</h4>
+                <h4>Downlaod ({downloads.length} in total)</h4>
                 {downloads.map(file => (
                   <div key={file.filename} className="download-item">
                     <div className="download-info">
@@ -793,13 +793,13 @@ function App() {
                         className="btn" 
                         onClick={() => downloadFile(file.filename, file.type)}
                       >
-                        <i className="fas fa-download"></i> 下载
+                        <i className="fas fa-download"></i> Download
                       </button>
                       <button 
                         className="btn btn-danger" 
                         onClick={() => deleteFile(file.filename, file.type)}
                       >
-                        <i className="fas fa-trash"></i> 删除
+                        <i className="fas fa-trash"></i> Delete
                       </button>
                     </div>
                   </div>
