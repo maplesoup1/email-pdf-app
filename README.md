@@ -257,8 +257,18 @@ cd frontend && npm test
 # Health Check
 curl http://localhost:3000/api/status/health
 
+Planned Features
+
+Outlook & Gmail Add-ins: Browser-side plugins or native add-ins for one-click conversion directly inside the user's email inbox.
+
+Email-to-PDF Auto-Send: After conversion, automatically send the generated PDF to a configured destination (e.g. accounting@company.com).
+
+Database Integration: Store conversion history, email metadata, and generated filenames for audit and reference.
+
 ✨ Goal
 
 This application aims to automate email-to-PDF processing, reduce human error, streamline documentation, and improve the reliability of manual workflows across multiple email platforms.
 
+
 MIT License | Built with Node.js + React + pdf-lib
+![alt text](image.png)
