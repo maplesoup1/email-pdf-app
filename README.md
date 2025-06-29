@@ -1,277 +1,261 @@
-Gmail & Email to PDF Converter
-A powerful full-stack application that converts emails from multiple email providers (Gmail, Outlook) into PDF documents with support for attachment merging and splitting.
+Gmail & Outlook to PDF Converter
 
-🌟 Features
+A powerful full-stack automation tool designed to reduce manual processing errors by converting emails from multiple providers (Gmail, Outlook, etc.) into high-quality PDF documents. Supports advanced features like attachment merging, PDF splitting, and flexible conversion modes.
+
+✨ Features
+
 📧 Multi-Email Provider Support
-Gmail - Full integration with Google Gmail API
-Outlook/Microsoft 365 - Complete support via Microsoft Graph API
-Yahoo Mail - Ready for integration (interface prepared)
-iCloud Mail - Ready for integration (interface prepared)
+
+Gmail: Full integration with Gmail API
+
+Outlook / Microsoft 365: Powered by Microsoft Graph API
+
 🔄 Flexible Conversion Modes
-Merged Mode - Combine email content with PDF attachments into single PDF
-Email Only - Convert email content to PDF without attachments
-Attachments Only - Download attachments with type filtering (PDF, Images, Documents, Others)
-Auto Mode - Intelligently choose best conversion method
+
+Merged Mode: Combine email content with PDF attachments
+
+Email Only: Export just the email content as PDF
+
+Attachments Only: Extract specific types of attachments (PDFs, images, documents, others)
+
+Auto Mode: Smart selection based on email content and attachments
+
 ✂️ PDF Management
-PDF Merging - Combine email content with PDF attachments
-PDF Splitting - Separate merged PDFs back into original components
-Smart Analysis - Automatic PDF structure detection
-Custom Settings - Manual page count and attachment configuration
+
+PDF Merging: Combine emails with PDF attachments
+
+PDF Splitting: Separate merged PDFs back into original components
+
+Smart Analysis: Detect structure and suggest splits
+
+Manual Configuration: Customize page counts and filenames
+
 🎨 Modern UI/UX
-Responsive Design - Works on desktop and mobile devices
-Real-time Status - Live system monitoring and authentication status
-Interactive Interface - Drag-and-drop style email selection
-Multi-language Support - English interface with localization ready
-🏗️ Architecture
-├── backend/                    # Node.js Express Server
+
+Responsive design for desktop & mobile
+
+Live status and auth indicators
+
+Interactive drag-and-select interface
+
+Multi-language ready (default: English)
+
+🏗️ Architecture Overview
+
+project-root/
+├── backend/                    # Node.js Express API
 │   ├── routes/                # API route handlers
-│   │   ├── email-routes.js    # Email conversion endpoints
-│   │   ├── attachment-routes.js # Attachment management
-│   │   ├── provider-routes.js # Email provider switching
-│   │   ├── status-routes.js   # System status & health
-│   │   └── demerge-routes.js  # PDF splitting functionality
-│   ├── services/              # Business logic services
-│   │   ├── gmail-service.js   # Gmail API integration
-│   │   ├── outlook-service.js # Outlook/Graph API integration
-│   │   ├── email-provider-service.js # Provider abstraction
-│   │   ├── attachment-service.js # Attachment processing
-│   │   ├── pdf-service.js     # PDF manipulation
-│   │   ├── html-service.js    # Email-to-HTML conversion
-│   │   ├── puppeteer-service.js # HTML-to-PDF conversion
-│   │   └── email-processor.js # Main processing orchestrator
-│   ├── downloads/             # Generated files storage
-│   ├── app.js                 # Express server setup
-│   ├── credentials.json       # Gmail OAuth credentials
-│   ├── token.json            # Gmail access tokens
-│   ├── outlook-config.json   # Outlook app configuration
-│   └── outlook-token.json    # Outlook access tokens
-└── frontend/                  # React Application
+│   ├── services/              # Business logic modules
+│   ├── downloads/             # PDF and attachment storage
+│   ├── app.js                 # Entry point
+│   ├── credentials.json       # Gmail OAuth
+│   ├── token.json             # Gmail token
+│   ├── outlook-config.json    # Outlook OAuth config
+│   └── outlook-token.json     # Outlook token
+└── frontend/                  # React.js application
     ├── src/
-    │   ├── App.js            # Main React component
-    │   ├── App.css           # Styling and responsive design
-    │   └── index.js          # React entry point
     ├── public/
-    │   ├── index.html        # HTML template
-    │   └── manifest.json     # PWA configuration
-    └── package.json          # Frontend dependencies
+    └── package.json
+
 🚀 Quick Start
+
 Prerequisites
+
 Node.js 16+
-npm or yarn
-Google Cloud Project (for Gmail)
-Azure App Registration (for Outlook)
-1. Backend Setup
-bash
-# Clone and navigate to backend
+
+Gmail API credentials
+
+Microsoft Azure App registration (for Outlook)
+
+Backend Setup
+
 cd backend
-
-# Install dependencies
 npm install
-
-# Configure Gmail (Google Cloud Console)
-# 1. Create project at https://console.cloud.google.com
-# 2. Enable Gmail API
-# 3. Create OAuth 2.0 credentials
-# 4. Download credentials.json to backend root
-
-# Configure Outlook (Azure Portal)
-# 1. Register app at https://portal.azure.com
-# 2. Add Mail.Read permissions
-# 3. Create outlook-config.json:
-json
-{
-  "clientId": "your-outlook-client-id",
-  "clientSecret": "your-outlook-client-secret", 
-  "redirectUri": "http://localhost:3000/api/providers/outlook/callback",
-  "scopes": [
-    "https://graph.microsoft.com/Mail.Read",
-    "https://graph.microsoft.com/Mail.ReadWrite"
-  ]
-}
-bash
-# Start backend server
 npm start
-# Server runs on http://localhost:3000
-2. Frontend Setup
-bash
-# Navigate to frontend
+
+Configure:
+
+credentials.json for Gmail
+
+outlook-config.json for Outlook (with required scopes)
+
+Frontend Setup
+
 cd frontend
-
-# Install dependencies
 npm install
-
-# Start development server
 npm start
-# Frontend runs on http://localhost:3001
-3. Authentication Setup
-Gmail Authentication
-Run backend server
-Access http://localhost:3001
-Application will guide you through OAuth flow
-Grant necessary permissions
-token.json will be created automatically
-Outlook Authentication
-Switch to Outlook provider in UI
-Click "Authenticate Outlook" button
-Complete Microsoft OAuth flow
-outlook-token.json will be created automatically
-📖 API Documentation
+
+Runs at: http://localhost:3001
+
+📖 API Overview
+
 Base URL: http://localhost:3000/api
-Email Endpoints
-Get Email List
-http
+
+Email Operations
+
 GET /emails/list?maxResults=20&provider=gmail
-Convert Latest Email
-http
+
 POST /emails/convert-latest
-Content-Type: application/json
 
-{
-  "mode": "merged",
-  "attachmentTypes": ["pdf", "images"],
-  "provider": "outlook"
-}
-Convert Specific Email
-http
 POST /emails/convert/{messageId}
-Content-Type: application/json
 
-{
-  "mode": "email_only",
-  "provider": "gmail"
-}
 Provider Management
-List Available Providers
-http
+
 GET /providers/list
-Switch Email Provider
-http
+
 POST /providers/switch
-Content-Type: application/json
 
-{
-  "provider": "outlook"
-}
 PDF Operations
-List Merged PDFs
-http
-GET /demerge/list
-Split Merged PDF
-http
-POST /demerge/split/{filename}
-Content-Type: application/json
 
-{
-  "emailPageCount": 2,
-  "attachmentInfo": [
-    {
-      "originalName": "document.pdf", 
-      "pageCount": 5
-    }
-  ]
-}
-🛠️ Configuration
-Environment Variables
-bash
-# Backend (.env)
+GET /demerge/list
+
+POST /demerge/split/{filename}
+
+GET /attachments/download/{filename}
+
+🔧 Configuration
+
+.env (Backend)
+
 PORT=3000
 NODE_ENV=development
+GMAIL_CLIENT_ID=...
+GMAIL_CLIENT_SECRET=...
+OUTLOOK_CLIENT_ID=...
+OUTLOOK_CLIENT_SECRET=...
 
-# Gmail Configuration
-GMAIL_CLIENT_ID=your_gmail_client_id
-GMAIL_CLIENT_SECRET=your_gmail_client_secret
-
-# Outlook Configuration  
-OUTLOOK_CLIENT_ID=your_outlook_client_id
-OUTLOOK_CLIENT_SECRET=your_outlook_client_secret
 Conversion Modes
-Mode	Description	Use Case
-merged	Email + PDF attachments combined	Complete document archival
-email_only	Just email content as PDF	Text-only preservation
-attachments_only	Download attachments only	File extraction
-auto	Smart mode selection	General purpose
-Attachment Type Filters
-PDF - PDF documents only
-Images - JPG, PNG, GIF image files
-Documents - Word, Excel, PowerPoint files
-Others - All other attachment types
-🔧 Development
-Adding New Email Providers
-Create new service in services/ (e.g., yahoo-service.js)
-Implement required methods:
-authenticate()
-getLatestEmail()
-getEmailList(maxResults)
-getEmailById(messageId)
-getAttachments(messageId)
-downloadAttachment(...)
-Register in EmailProviderService:
-javascript
-this.providers = {
-  'gmail': new GmailService(),
-  'outlook': new OutlookService(),
-  'yahoo': new YahooService()  // Add here
-};
-Add authentication routes in routes/
-Update frontend provider list
+
+Mode
+
+Description
+
+merged
+
+Email + attachments
+
+email_only
+
+Email content only
+
+attachments_only
+
+Attachments only with filtering
+
+auto
+
+Smart mode
+
+Attachment Filters
+
+PDF: application/pdf
+
+Images: JPG, PNG, GIF
+
+Documents: DOCX, XLSX, PPTX
+
+Others: zip, txt, etc.
+
+📱 Usage Examples
+
+Convert Specific Email
+
+Select email provider (Gmail or Outlook)
+
+Click Refresh to load emails
+
+Select desired email
+
+Choose conversion mode
+
+Click Convert this email
+
+Batch Convert Latest Email
+
+Click Convert newest email
+
+Select attachment filters if needed
+
+Result downloads automatically
+
+PDF Splitting
+
+Go to PDF Demerge Panel
+
+Select a merged PDF
+
+Click Analyze (auto split suggestion)
+
+Adjust settings manually if needed
+
+Click Split to generate files
+
+💡 Development Notes
+
+Add New Email Provider
+
+Create service (e.g., yahoo-service.js)
+
+Implement: authenticate(), getEmailList(), getEmailById(), etc.
+
+Register in email-provider-service.js
+
+Add UI button and label in frontend
+
 Custom PDF Processing
-javascript
-// Example: Custom PDF watermarking
+
+You can hook into PDF generation to apply custom logic:
+
 const customPdfProcessor = async (pdfBuffer) => {
   const pdfDoc = await PDFDocument.load(pdfBuffer);
-  // Add watermark logic
+  // Add watermark, modify metadata, etc.
   return await pdfDoc.save();
 };
-📱 Usage Examples
-Basic Email Conversion
-Open application
-Select email provider (Gmail/Outlook)
-Click "Refresh" to load emails
-Select email from list
-Choose conversion mode
-Click "Convert this email"
-PDF downloads automatically
-Batch Processing
-Use "Convert newest email" for latest email
-Choose "Attachments only" mode
-Select attachment types (PDF, Images, etc.)
-All matching attachments download
-PDF Management
-Access "PDF demerge" panel
-Select merged PDF file
-Click "Analyze" for automatic detection
-Adjust page counts manually if needed
-Click "Split" to separate components
-🧪 Testing
-bash
-# Backend tests
-cd backend
-npm test
 
-# Frontend tests  
-cd frontend
-npm test
+🚫 Troubleshooting
 
-# API testing with curl
-curl -X GET http://localhost:3000/api/status/health
-curl -X GET http://localhost:3000/api/providers/list
-🐛 Troubleshooting
-Common Issues
-Gmail Authentication Failed
-Verify credentials.json is valid
-Check OAuth redirect URIs match
-Ensure Gmail API is enabled in Google Cloud Console
-Outlook Authentication Failed
-Confirm Azure app registration
-Verify redirect URI: http://localhost:3000/api/providers/outlook/callback
-Check Mail.Read permissions granted
-PDF Generation Errors
-Install Puppeteer dependencies: npm install puppeteer
-For Linux: sudo apt-get install -y libxss1 libgconf-2-4 libasound2
-File Permission Errors
-Ensure write permissions to downloads/ directory
-Check disk space availability
-Debug Mode
-bash
-# Enable debug logging
-DEBUG=app:* npm start
+Gmail Auth Fails
+
+Check credentials.json
+
+Ensure redirect URI matches your project
+
+Gmail API must be enabled in Google Cloud Console
+
+Outlook Auth Fails
+
+Verify Azure app registration
+
+Ensure Mail.Read permission is granted
+
+Check outlook-config.json format
+
+PDF Generation Error
+
+Make sure Puppeteer dependencies installed:
+
+npm install puppeteer
+sudo apt install libxss1 libgconf-2-4 libasound2
+
+Download Fails / Missing Files
+
+Ensure files are saved in correct folder (downloads/attachments)
+
+Check read/write permissions
+
+🔮 Testing
+
+# Backend
+cd backend && npm test
+
+# Frontend
+cd frontend && npm test
+
+# Health Check
+curl http://localhost:3000/api/status/health
+
+✨ Goal
+
+This application aims to automate email-to-PDF processing, reduce human error, streamline documentation, and improve the reliability of manual workflows across multiple email platforms.
+
+MIT License | Built with Node.js + React + pdf-lib
