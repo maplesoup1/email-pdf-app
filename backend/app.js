@@ -8,6 +8,8 @@ const emailRoutes = require('./routes/email-routes');
 const attachmentRoutes = require('./routes/attachment-routes');
 const statusRoutes = require('./routes/status-routes');
 const demergeRoutes = require('./routes/demerge-routes');
+const providerRoutes = require('./routes/provider-routes');
+const outlookAuthRoutes = require('./routes/outlook-auth');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -27,6 +29,9 @@ if (!fs.existsSync(attachmentsDir)) {
     fs.mkdirSync(attachmentsDir, { recursive: true });
 }
 
+// 重要：outlook认证路由必须在通用providers路由之前注册
+app.use('/api/providers/outlook', outlookAuthRoutes);
+app.use('/api/providers', providerRoutes);
 app.use('/api/emails', emailRoutes);
 app.use('/api/attachments', attachmentRoutes);
 app.use('/api/status', statusRoutes);
@@ -39,27 +44,43 @@ app.get('/api', (req, res) => {
         version: '1.0.0',
         endpoints: {
             emails: {
-                'GET /api/emails/latest': '获取最新邮件',
-                'GET /api/emails/list': '获取邮件列表',
-                'GET /api/emails/:messageId': '获取指定邮件',
-                'POST /api/emails/convert-latest': '转换最新邮件为PDF',
-                'POST /api/emails/convert/:messageId': '转换指定邮件为PDF',
-                'GET /api/emails/download/:filename': '下载PDF文件',
-                'DELETE /api/emails/downloads/:filename': '删除PDF文件'
+                'GET /api/emails/latest': 'Get latest email',
+                'GET /api/emails/list': 'Get email list',
+                'GET /api/emails/:messageId': 'Get specific email',
+                'POST /api/emails/convert-latest': 'Convert latest email to PDF',
+                'POST /api/emails/convert/:messageId': 'Convert specific email to PDF',
+                'GET /api/emails/download/:filename': 'Download PDF file',
+                'DELETE /api/emails/downloads/:filename': 'Delete PDF file'
             },
             attachments: {
-                'GET /api/attachments/:messageId/list': '获取邮件附件列表',
-                'POST /api/attachments/:messageId/download/:attachmentId': '下载指定附件',
-                'GET /api/attachments/download/:filename': '下载附件文件',
-                'POST /api/attachments/:messageId/download-all': '下载所有附件',
-                'DELETE /api/attachments/cleanup/:messageId': '清理附件文件'
+                'GET /api/attachments/:messageId/list': 'Get email attachment list',
+                'POST /api/attachments/:messageId/download/:attachmentId': 'Download specific attachment',
+                'GET /api/attachments/download/:filename': 'Download attachment file',
+                'POST /api/attachments/:messageId/download-all': 'Download all attachments',
+                'DELETE /api/attachments/cleanup/:messageId': 'Clean attachment files'
+            },
+            providers: {
+                'GET /api/providers/list': 'Get available email providers',
+                'POST /api/providers/switch': 'Switch email provider',
+                'GET /api/providers/status': 'Get current provider status',
+                'GET /api/providers/auth/:provider': 'Check provider authentication'
+            },
+            outlook: {
+                'GET /api/providers/outlook/auth': 'Get Outlook authorization URL',
+                'GET /api/providers/outlook/callback': 'Outlook OAuth callback',
+                'GET /api/providers/outlook/token-status': 'Check Outlook token status'
             },
             status: {
-                'GET /api/status/health': '健康检查',
-                'GET /api/status/auth': '认证状态',
-                'GET /api/status/downloads': '下载文件状态',
-                'POST /api/status/cleanup': '清理文件',
-                'GET /api/status/system': '系统信息'
+                'GET /api/status/health': 'Health check',
+                'GET /api/status/auth': 'Authentication status',
+                'GET /api/status/downloads': 'Download files status',
+                'POST /api/status/cleanup': 'Clean files',
+                'GET /api/status/system': 'System information'
+            },
+            demerge: {
+                'GET /api/demerge/list': 'Get merged PDF files',
+                'POST /api/demerge/split/:filename': 'Split merged PDF',
+                'GET /api/demerge/analyze/:filename': 'Analyze PDF structure'
             }
         }
     });
@@ -68,25 +89,26 @@ app.get('/api', (req, res) => {
 app.use((req, res) => {
     res.status(404).json({
         success: false,
-        error: '接口不存在',
+        error: 'API not found',
         path: req.path
     });
 });
 
 app.use((error, req, res, next) => {
-    console.error('服务器错误:', error);
+    console.error('Server error:', error);
     
     res.status(500).json({
         success: false,
-        error: '服务器内部错误',
-        message: process.env.NODE_ENV === 'development' ? error.message : '请联系管理员'
+        error: 'Internal server error',
+        message: process.env.NODE_ENV === 'development' ? error.message : 'Please contact administrator'
     });
 });
 
 app.listen(PORT, () => {
-    console.log(`🚀 服务器运行在 http://localhost:${PORT}`);
-    console.log(`📚 API文档: http://localhost:${PORT}/api`);
-    console.log(`🏥 健康检查: http://localhost:${PORT}/api/status/health`);
+    console.log(`🚀 Server running at http://localhost:3000`);
+    console.log(`📚 API Documentation: http://localhost:3000/api`);
+    console.log(`🏥 Health Check: http://localhost:3000/api/status/health`);
+    console.log(`🔐 Outlook Auth: http://localhost:3000/api/providers/outlook/auth`);
 });
 
 module.exports = app;

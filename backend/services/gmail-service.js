@@ -41,6 +41,58 @@ class GmailService {
         return this.parseEmailMessage(messageResponse.data);
     }
 
+    async getEmailList(maxResults = 10, pageToken = null) {
+        if (!this.gmail) {
+            await this.authenticate();
+        }
+
+        const listResponse = await this.gmail.users.messages.list({
+            userId: 'me',
+            maxResults: parseInt(maxResults),
+            pageToken
+        });
+        
+        const emails = [];
+        if (listResponse.data.messages) {
+            for (const message of listResponse.data.messages) {
+                const messageResponse = await this.gmail.users.messages.get({
+                    userId: 'me',
+                    id: message.id,
+                    format: 'metadata',
+                    metadataHeaders: ['Subject', 'From', 'Date']
+                });
+                
+                const headers = messageResponse.data.payload.headers;
+                emails.push({
+                    messageId: message.id,
+                    subject: headers.find(h => h.name === 'Subject')?.value || '',
+                    from: headers.find(h => h.name === 'From')?.value || '',
+                    date: headers.find(h => h.name === 'Date')?.value || '',
+                    snippet: messageResponse.data.snippet
+                });
+            }
+        }
+        
+        return {
+            emails,
+            nextPageToken: listResponse.data.nextPageToken
+        };
+    }
+
+    async getEmailById(messageId) {
+        if (!this.gmail) {
+            await this.authenticate();
+        }
+
+        const messageResponse = await this.gmail.users.messages.get({
+            userId: 'me',
+            id: messageId,
+            format: 'full'
+        });
+        
+        return this.parseEmailMessage(messageResponse.data);
+    }
+
     parseEmailMessage(message) {
         const headers = message.payload.headers;
         const subject = headers.find(h => h.name === 'Subject')?.value || '';

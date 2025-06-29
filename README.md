@@ -1,70 +1,274 @@
-# Getting Started with Create React App
+Gmail & Outlook to PDF Converter
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+A powerful full-stack automation tool designed to reduce manual processing errors by converting emails from multiple providers (Gmail, Outlook, etc.) into high-quality PDF documents. Supports advanced features like attachment merging, PDF splitting, and flexible conversion modes.
 
-## Available Scripts
+✨ Features
 
-In the project directory, you can run:
+📧 Multi-Email Provider Support
 
-### `npm start`
+Gmail: Full integration with Gmail API
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+Outlook / Microsoft 365: Powered by Microsoft Graph API
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+🔄 Flexible Conversion Modes
 
-### `npm test`
+Merged Mode: Combine email detial, main content with PDF attachments
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+Email Only: Export just the email detail, main content as PDF
 
-### `npm run build`
+Attachments Only: Extract specific types of attachments (PDFs, images, documents, others)
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+Auto Mode: Smart selection based on email content and attachments
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+✂️ PDF Management
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+PDF Merging: Combine emails with PDF attachments
 
-### `npm run eject`
+PDF Splitting: Separate merged PDFs back into original components
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+Smart Analysis: Detect structure and suggest splits
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+Manual Configuration: Customize page counts and filenames
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+🎨 Modern UI/UX
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+Responsive design for desktop & mobile
 
-## Learn More
+Live status and auth indicators
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+Interactive drag-and-select interface
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+Multi-language ready (default: English)
 
-### Code Splitting
+🏗️ Architecture Overview
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
+project-root/
+├── backend/                    # Node.js Express API
+│   ├── routes/                # API route handlers
+│   ├── services/              # Business logic modules
+│   ├── downloads/             # PDF and attachment storage
+│   ├── app.js                 # Entry point
+<!--  -->
+│   ├── credentials.json       # Gmail OAuth
+│   ├── token.json             # Gmail token
+│   ├── outlook-config.json    # Outlook OAuth config
+│   └── outlook-token.json     # Outlook token
+(Configure it yourself)
+<!--  -->
+└── frontend/                  # React.js application
+    ├── src/
+    ├── public/
+    └── package.json
 
-### Analyzing the Bundle Size
+🚀 Quick Start
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
+Prerequisites
 
-### Making a Progressive Web App
+Node.js 16+
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
+Gmail API credentials
 
-### Advanced Configuration
+Microsoft Azure App registration (for Outlook)
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
+Backend Setup
 
-### Deployment
+cd backend
+npm install
+node app.js
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
+Configure:
 
-### `npm run build` fails to minify
+credentials.json for Gmail
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+outlook-config.json for Outlook (with required scopes)
+
+Frontend Setup
+
+cd frontend
+npm install
+npm start
+
+Runs at: http://localhost:3001
+
+📖 API Overview
+
+Base URL: http://localhost:3000/api
+
+Email Operations
+
+GET /emails/list?maxResults=20&provider=gmail
+
+POST /emails/convert-latest
+
+POST /emails/convert/{messageId}
+
+Provider Management
+
+GET /providers/list
+
+POST /providers/switch
+
+PDF Operations
+
+GET /demerge/list
+
+POST /demerge/split/{filename}
+
+GET /attachments/download/{filename}
+
+🔧 Configuration
+
+.env (Backend)
+
+PORT=3000
+NODE_ENV=development
+GMAIL_CLIENT_ID=...
+GMAIL_CLIENT_SECRET=...
+OUTLOOK_CLIENT_ID=...
+OUTLOOK_CLIENT_SECRET=...
+
+Conversion Modes
+
+Mode
+
+Description
+
+merged
+
+Email + attachments
+
+email_only
+
+Email content only
+
+attachments_only
+
+Attachments only with filtering
+
+auto
+
+Smart mode
+
+Attachment Filters
+
+PDF: application/pdf
+
+Images: JPG, PNG, GIF
+
+Documents: DOCX, XLSX, PPTX
+
+Others: zip, txt, etc.
+
+📱 Usage Examples
+
+Convert Specific Email
+
+Select email provider (Your own Gmail or Outlook, personal or organization)
+
+Click Refresh to load emails
+
+Select desired email
+
+Choose conversion mode
+
+Click Convert this email
+
+Batch Convert Latest Email
+
+Click Convert newest email
+
+Select attachment filters if needed
+
+Result downloads automatically
+
+PDF Splitting
+
+Go to PDF Demerge Panel
+
+Select a merged PDF
+
+Click Analyze (auto split suggestion)
+
+Adjust settings manually if needed
+
+Click Split to generate files
+
+💡 Development Notes
+
+Add New Email Provider
+
+Create service (e.g., yahoo-service.js)
+
+Implement: authenticate(), getEmailList(), getEmailById(), etc.
+
+Register in email-provider-service.js
+
+Add UI button and label in frontend
+
+Custom PDF Processing
+
+You can hook into PDF generation to apply custom logic:
+
+const customPdfProcessor = async (pdfBuffer) => {
+  const pdfDoc = await PDFDocument.load(pdfBuffer);
+  // Add watermark, modify metadata, etc.
+  return await pdfDoc.save();
+};
+
+🚫 Troubleshooting
+
+Gmail Auth Fails
+
+Check credentials.json
+
+Ensure redirect URI matches your project
+
+Gmail API must be enabled in Google Cloud Console
+
+Outlook Auth Fails
+
+Verify Azure app registration
+
+Ensure Mail.Read permission is granted
+
+Check outlook-config.json format
+
+PDF Generation Error
+
+Make sure Puppeteer dependencies installed:
+
+npm install puppeteer
+sudo apt install libxss1 libgconf-2-4 libasound2
+
+Download Fails / Missing Files
+
+Ensure files are saved in correct folder (downloads/attachments)
+
+Check read/write permissions
+
+🔮 Testing
+
+# Backend
+cd backend && npm test
+
+# Frontend
+cd frontend && npm test
+
+# Health Check
+curl http://localhost:3000/api/status/health
+
+Planned Features
+
+Outlook & Gmail Add-ins: Browser-side plugins or native add-ins for one-click conversion directly inside the user's email inbox.
+
+Email-to-PDF Auto-Send: After conversion, automatically send the generated PDF to a configured destination (e.g. accounting@company.com).
+
+Database Integration: Store conversion history, email metadata, and generated filenames for audit and reference.
+
+✨ Goal
+
+This application aims to automate email-to-PDF processing, reduce human error, streamline documentation, and improve the reliability of manual workflows across multiple email platforms.
+
+
+MIT License | Built with Node.js + React + pdf-lib
+![alt text](image.png)
