@@ -12,9 +12,9 @@ Outlook / Microsoft 365: Powered by Microsoft Graph API
 
 🔄 Flexible Conversion Modes
 
-Merged Mode: Combine email content with PDF attachments
+Merged Mode: Combine email detial, main content with PDF attachments
 
-Email Only: Export just the email content as PDF
+Email Only: Export just the email detail, main content as PDF
 
 Attachments Only: Extract specific types of attachments (PDFs, images, documents, others)
 
@@ -48,10 +48,13 @@ project-root/
 │   ├── services/              # Business logic modules
 │   ├── downloads/             # PDF and attachment storage
 │   ├── app.js                 # Entry point
+<!--  -->
 │   ├── credentials.json       # Gmail OAuth
 │   ├── token.json             # Gmail token
 │   ├── outlook-config.json    # Outlook OAuth config
 │   └── outlook-token.json     # Outlook token
+(Configure it yourself)
+<!--  -->
 └── frontend/                  # React.js application
     ├── src/
     ├── public/
@@ -71,7 +74,7 @@ Backend Setup
 
 cd backend
 npm install
-npm start
+node app.js
 
 Configure:
 
@@ -160,7 +163,7 @@ Others: zip, txt, etc.
 
 Convert Specific Email
 
-Select email provider (Gmail or Outlook)
+Select email provider (Your own Gmail or Outlook, personal or organization)
 
 Click Refresh to load emails
 
