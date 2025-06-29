@@ -73,7 +73,11 @@ class PdfService {
                 
                 const attachmentPdfBuffer = await attachmentPdf.save();
                 const attachmentFilename = `demerged_${attachment.originalName}`;
-                const attachmentPath = path.join(path.dirname(mergedPdfPath), attachmentFilename);
+                const attachmentDir = path.join(__dirname, '../downloads/attachments');
+                if (!fs.existsSync(attachmentDir)) {
+                fs.mkdirSync(attachmentDir, { recursive: true });
+                }
+                const attachmentPath = path.join(attachmentDir, attachmentFilename);
                 
                 fs.writeFileSync(attachmentPath, attachmentPdfBuffer);
                 

@@ -1,25 +1,19 @@
 const express = require('express');
 const router = express.Router();
-const GmailService = require('../services/gmail-service');
+const EmailProviderService = require('../services/email-provider-service');
 const AttachmentService = require('../services/attachment-service');
 const fs = require('fs');
 const path = require('path');
 
-const gmailService = new GmailService();
+const emailProviderService = new EmailProviderService();
 const attachmentService = new AttachmentService();
 
 router.get('/:messageId/list', async (req, res) => {
     try {
         const { messageId } = req.params;
-        await gmailService.authenticate();
+        const { provider } = req.query;
         
-        const messageResponse = await gmailService.gmail.users.messages.get({
-            userId: 'me',
-            id: messageId,
-            format: 'full'
-        });
-        
-        const attachments = attachmentService.detectAttachments(messageResponse.data.payload);
+        const attachments = await emailProviderService.getAttachments(messageId, provider);
         
         res.json({
             success: true,
@@ -28,7 +22,8 @@ router.get('/:messageId/list', async (req, res) => {
                 attachments,
                 totalCount: attachments.length,
                 pdfCount: attachments.filter(a => a.isPdf).length,
-                hasPdfAttachment: attachmentService.hasPdfAttachment(attachments)
+                hasPdfAttachment: attachmentService.hasPdfAttachment(attachments),
+                provider: provider || emailProviderService.getCurrentProvider()
             }
         });
     } catch (error) {
@@ -43,6 +38,7 @@ router.post('/:messageId/download/:attachmentId', async (req, res) => {
     try {
         const { messageId, attachmentId } = req.params;
         const { filename } = req.body;
+        const { provider } = req.query;
         
         if (!filename) {
             return res.status(400).json({
@@ -56,7 +52,7 @@ router.post('/:messageId/download/:attachmentId', async (req, res) => {
             fs.mkdirSync(downloadDir, { recursive: true });
         }
         
-        const filePath = await gmailService.downloadAttachment(messageId, attachmentId, filename, downloadDir);
+        const filePath = await emailProviderService.downloadAttachment(messageId, attachmentId, filename, downloadDir, provider);
         
         res.json({
             success: true,
@@ -65,7 +61,8 @@ router.post('/:messageId/download/:attachmentId', async (req, res) => {
                 attachmentId,
                 filename,
                 filePath: path.basename(filePath),
-                size: fs.statSync(filePath).size
+                size: fs.statSync(filePath).size,
+                provider: provider || emailProviderService.getCurrentProvider()
             }
         });
     } catch (error) {

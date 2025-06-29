@@ -42,14 +42,7 @@ class EmailProviderService {
 
     async getEmailList(maxResults = 10, providerName = null) {
         const provider = this.getProvider(providerName);
-        
-        if ((providerName || this.currentProvider) === 'gmail') {
-            return await provider.getEmailList(maxResults);
-        } else if ((providerName || this.currentProvider) === 'outlook') {
-            return await provider.getEmailList(maxResults);
-        }
-        
-        throw new Error('不支持的邮件提供商');
+        return await provider.getEmailList(maxResults);
     }
 
     async getEmailById(messageId, providerName = null) {
@@ -66,9 +59,10 @@ class EmailProviderService {
     }
 
     async getAttachments(messageId, providerName = null) {
+        const currentProviderName = providerName || this.currentProvider;
         const provider = this.getProvider(providerName);
         
-        if ((providerName || this.currentProvider) === 'outlook') {
+        if (currentProviderName === 'outlook') {
             return await provider.getAttachments(messageId);
         } else {
             // Gmail使用现有的AttachmentService
