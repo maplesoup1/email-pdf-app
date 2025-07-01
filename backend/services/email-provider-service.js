@@ -40,14 +40,14 @@ class EmailProviderService {
         return email;
     }
 
-    async getEmailList(maxResults = 10, providerName = null) {
+    async getEmailList(maxResults = 10, providerName = null, sessionId = null) {
         const provider = this.getProvider(providerName);
-        return await provider.getEmailList(maxResults);
+        return await provider.getEmailList(maxResults, sessionId);
     }
 
-    async getEmailById(messageId, providerName = null) {
+    async getEmailById(messageId, providerName = null, sessionId = null) {
         const provider = this.getProvider(providerName);
-        const email = await provider.getEmailById(messageId);
+        const email = await provider.getEmailById(messageId, sessionId);
         
         // 为Outlook邮件获取附件信息
         if ((providerName || this.currentProvider) === 'outlook') {
@@ -58,24 +58,20 @@ class EmailProviderService {
         return email;
     }
 
-    async getAttachments(messageId, providerName = null) {
-        const currentProviderName = providerName || this.currentProvider;
+    async getAttachments(messageId, providerName = null, sessionId = null) {
         const provider = this.getProvider(providerName);
-        
-        if (currentProviderName === 'outlook') {
-            return await provider.getAttachments(messageId);
-        } else {
-            // Gmail使用现有的AttachmentService
-            const AttachmentService = require('./attachment-service');
-            const attachmentService = new AttachmentService();
-            const email = await provider.getEmailById(messageId);
-            return attachmentService.detectAttachments(email.payload);
+        const email = await provider.getEmailById(messageId, sessionId);
+        if (!email?.payload) {
+            throw new Error('No payload found in email');
         }
+        const AttachmentService = require('./attachment-service');
+        const attachmentService = new AttachmentService();
+        return attachmentService.detectAttachments(email.payload);
     }
 
-    async downloadAttachment(messageId, attachmentId, filename, downloadDir, providerName = null) {
+    async downloadAttachment(messageId, attachmentId, filename, downloadDir, providerName = null, sessionId = null) {
         const provider = this.getProvider(providerName);
-        return await provider.downloadAttachment(messageId, attachmentId, filename, downloadDir);
+        return await provider.downloadAttachment(messageId, attachmentId, filename, downloadDir, sessionId);
     }
 
     async checkAuthentication(providerName = null) {

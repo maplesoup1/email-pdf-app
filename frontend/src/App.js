@@ -9,6 +9,7 @@ function App() {
   const [systemStats, setSystemStats] = useState({});
   const [authStatus, setAuthStatus] = useState('checking');
   const [loading, setLoading] = useState({});
+  const [load, setLoad] = useState({});
   const [messages, setMessages] = useState([]);
   const [downloads, setDownloads] = useState([]);
   const [attachments, setAttachments] = useState([]);
@@ -25,14 +26,65 @@ function App() {
   const [currentProvider, setCurrentProvider] = useState('gmail');
   const [availableProviders, setAvailableProviders] = useState([]);
   const [showProviderSelector, setShowProviderSelector] = useState(false);
+  
+  const [downloadSettings, setDownloadSettings] = useState({
+    useCustomPath: false,
+    customPath: '',
+    autoCreateFolder: true,
+    folderNaming: 'date'
+  });
+  const [showDownloadSettings, setShowDownloadSettings] = useState(false);
+  const [suggestedPaths, setSuggestedPaths] = useState([]);
 
-  // 工具函数
+
   const formatFileSize = (bytes) => {
     if (bytes === 0) return '0 B';
     const k = 1024;
     const sizes = ['B', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
+  const validateSession = async (sessionId) => {
+    try {
+      const res = await fetch(`${API_BASE}/auth/validate/${sessionId}`);
+      const data = await res.json();
+      return data.valid; // true or false
+    } catch (e) {
+      return false;
+    }
+  };
+
+  const handleToAuthUrl = async () => {
+    try {
+      setLoad(prev => ({ ...prev, auth: true }));
+  
+      const oldSessionId = localStorage.getItem('sessionId');
+  
+      // 验证旧 sessionId 是否还能用（后端验证）
+      if (oldSessionId) {
+        const valid = await validateSession(oldSessionId);
+        if (!valid) {
+          localStorage.removeItem('sessionId');
+        }
+      }
+  
+      const response = await fetch(`${API_BASE}/auth/start`);
+      const res = await response.json();
+  
+      if (res.authUrl && res.sessionId) {
+        localStorage.setItem('sessionId', res.sessionId);
+        window.open(res.authUrl, '_blank');
+        showMessage('Please complete authentication in the new window', 'info');
+      } else {
+        throw new Error('Invalid response from server');
+      }
+    } catch (error) {
+      console.error('Failed to get auth URL:', error);
+      showMessage('Failed to get authentication URL', 'error');
+    } finally {
+      setLoad(prev => ({ ...prev, auth: false }));
+    }
   };
 
   const formatDate = (dateString) => {
@@ -51,7 +103,6 @@ function App() {
     setLoading(prev => ({ ...prev, [key]: state }));
   };
 
-  // API调用
   const apiCall = async (endpoint, options = {}) => {
     try {
       const response = await fetch(`${API_BASE}${endpoint}`, {
@@ -76,11 +127,73 @@ function App() {
     }
   };
 
-  // 初始化
+  const getSuggestedPaths = async () => {
+    try {
+      const result = await apiCall('/settings/suggested-paths');
+      setSuggestedPaths(result.suggestions || []);
+    } catch (error) {
+      console.error('Failed to get suggested paths:', error);
+    }
+  };
+
+  const validatePath = async (path) => {
+    try {
+      const result = await apiCall('/settings/validate-path', {
+        method: 'POST',
+        body: JSON.stringify({ path })
+      });
+      return result;
+    } catch (error) {
+      return { exists: false, writable: false, canCreate: false };
+    }
+  };
+
+  const updateDownloadSettings = async (newSettings) => {
+    try {
+      const result = await apiCall('/settings/download-path', {
+        method: 'POST',
+        body: JSON.stringify(newSettings)
+      });
+      
+      setDownloadSettings(result);
+      showMessage('Download settings saved successfully', 'success');
+    } catch (error) {
+      // Error already shown by apiCall
+    }
+  };
+
+  const getDownloadSettings = async () => {
+    try {
+      const settings = await apiCall('/settings/download-path');
+      setDownloadSettings(settings);
+    } catch (error) {
+      console.error('Failed to get download settings:', error);
+    }
+  };
+
+  const generatePathPreview = () => {
+    if (!downloadSettings.useCustomPath || !downloadSettings.customPath) {
+      return 'Use browser default download location';
+    }
+    
+    let previewPath = downloadSettings.customPath;
+    
+    if (downloadSettings.folderNaming === 'date') {
+      const today = new Date().toISOString().split('T')[0];
+      previewPath += `/${today}`;
+    } else if (downloadSettings.folderNaming === 'email') {
+      previewPath += '/[Email Subject]';
+    }
+    
+    return previewPath;
+  };
+
   useEffect(() => {
     checkSystemStatus();
     checkAuth();
     loadProviders();
+    getDownloadSettings();
+    getSuggestedPaths();
   }, []);
 
   const loadProviders = async () => {
@@ -104,10 +217,8 @@ function App() {
       setCurrentProvider(provider);
       showMessage(`Switched to ${getProviderDisplayName(provider)}`, 'success');
       
-      // Re-check authentication status
       await checkAuth();
       
-      // Clear current email list
       setEmails([]);
       setSelectedEmail(null);
       setAttachments([]);
@@ -144,7 +255,6 @@ function App() {
       window.open(authData.authUrl, '_blank', 'width=600,height=700');
       showMessage('Please complete authentication in the new window', 'info');
       
-      // Check auth status after a delay
       setTimeout(async () => {
         await checkAuth();
         await loadProviders();
@@ -191,16 +301,27 @@ function App() {
 
   const loadEmails = async () => {
     setLoadingState('emails', true);
+  
+    const sessionId = localStorage.getItem('sessionId');
+    if (!sessionId) {
+      showMessage('Missing session ID. Please authenticate first.', 'error');
+      setLoadingState('emails', false);
+      return;
+    }
+  
     try {
-      const emailData = await apiCall(`/emails/list?maxResults=20&provider=${currentProvider}`);
+      const emailData = await apiCall(`/emails/list?maxResults=20&sessionId=${sessionId}`);
       setEmails(emailData.emails);
-      showMessage(`Successfully loaded ${emailData.emails.length} emails from ${getProviderDisplayName(currentProvider)}`, 'success');
+      showMessage(`Successfully loaded ${emailData.emails.length} emails from session`, 'success');
     } catch (error) {
+      console.error('Failed to load emails:', error);
       setEmails([]);
+      showMessage('Failed to load emails', 'error');
     } finally {
       setLoadingState('emails', false);
     }
   };
+  
 
   const selectEmail = (email) => {
     setSelectedEmail(email);
@@ -215,20 +336,24 @@ function App() {
         body: JSON.stringify({ 
           mode: convertMode,
           attachmentTypes: attachmentTypes,
-          provider: currentProvider
+          provider: currentProvider,
+          downloadSettings: downloadSettings
         })
       });
       
       showMessage(`Convert successful! Mode: ${getModeText(result.mode)} (${getProviderDisplayName(currentProvider)})`, 'success');
       
-      // Download generated files
-      result.files.forEach(file => {
-        if (file.type === 'email_pdf' || file.type === 'merged_pdf') {
-          window.open(`${API_BASE}/emails/download/${file.filename}`);
-        } else if (file.type === 'attachment') {
-          window.open(`${API_BASE}/attachments/download/${file.filename}`);
-        }
-      });
+      if (result.useCustomPath && result.downloadPath) {
+        showMessage(`Files saved to: ${result.downloadPath}`, 'info');
+      } else {
+        result.files.forEach(file => {
+          if (file.type === 'email_pdf' || file.type === 'merged_pdf') {
+            window.open(`${API_BASE}/emails/download/${file.filename}`);
+          } else if (file.type === 'attachment') {
+            window.open(`${API_BASE}/attachments/download/${file.filename}`);
+          }
+        });
+      }
       
       await checkSystemStatus();
     } catch (error) {
@@ -246,25 +371,31 @@ function App() {
     
     setLoadingState('convertSelected', true);
     try {
+      const sessionId = localStorage.getItem('sessionId');
       const result = await apiCall(`/emails/convert/${selectedEmail.messageId}`, { 
         method: 'POST',
         body: JSON.stringify({ 
           mode: convertMode,
           attachmentTypes: attachmentTypes,
-          provider: currentProvider
+          provider: currentProvider,
+          downloadSettings: downloadSettings,
+          sessionId: sessionId
         })
       });
       
       showMessage(`Convert successful! Mode: ${getModeText(result.mode)} (${getProviderDisplayName(currentProvider)})`, 'success');
       
-      // Download generated files
-      result.files.forEach(file => {
-        if (file.type === 'email_pdf' || file.type === 'merged_pdf') {
-          window.open(`${API_BASE}/emails/download/${file.filename}`);
-        } else if (file.type === 'attachment') {
-          window.open(`${API_BASE}/attachments/download/${file.filename}`);
-        }
-      });
+      if (result.useCustomPath && result.downloadPath) {
+        showMessage(`Files saved to: ${result.downloadPath}`, 'info');
+      } else {
+        result.files.forEach(file => {
+          if (file.type === 'email_pdf' || file.type === 'merged_pdf') {
+            window.open(`${API_BASE}/emails/download/${file.filename}`);
+          } else if (file.type === 'attachment') {
+            window.open(`${API_BASE}/attachments/download/${file.filename}`);
+          }
+        });
+      }
       
       await checkSystemStatus();
     } catch (error) {
@@ -367,7 +498,6 @@ function App() {
       
       showMessage(`Split successful! Generated ${result.separatedFiles.length} files`, 'success');
       
-      // Auto download separated files
       result.separatedFiles.forEach((file, index) => {
         const downloadUrl = file.type === 'email' 
           ? `${API_BASE}/emails/download/${file.filename}`
@@ -424,10 +554,10 @@ function App() {
       });
       
       showMessage(`Cleanup completed! Deleted ${result.deletedCount} files`, 'success');
-      await checkSystemStatus();  // 刷新状态面板统计数字
-      await loadDownloads();      // 刷新下载列表
-      setSelectedEmail(null);     // 清除选中 email（如果你想更干净）
-      setAttachments([]);         // 清空附件列表
+      await checkSystemStatus();
+      await loadDownloads();
+      setSelectedEmail(null);
+      setAttachments([]);
       setDownloads([]);
     } catch (error) {
       // Error already shown by apiCall
@@ -459,9 +589,167 @@ function App() {
     return statusMap[authStatus] || 'Unknown status';
   };
 
+  const renderDownloadSettings = () => (
+    <>
+      <button 
+        className="btn" 
+        onClick={() => setShowDownloadSettings(!showDownloadSettings)}
+      >
+        <i className="fas fa-folder"></i>
+        Download Settings {showDownloadSettings ? '▲' : '▼'}
+      </button>
+
+      {showDownloadSettings && (
+        <div className="download-settings-panel">
+          <h4>Download Path Settings</h4>
+          
+          <div className="setting-group">
+            <label className="setting-option">
+              <input 
+                type="checkbox" 
+                checked={downloadSettings.useCustomPath}
+                onChange={(e) => {
+                  setDownloadSettings({
+                    ...downloadSettings,
+                    useCustomPath: e.target.checked
+                  });
+                }}
+              />
+              <span>Use custom download path</span>
+            </label>
+          </div>
+
+          {downloadSettings.useCustomPath && (
+            <>
+              <div className="setting-group">
+                <label>
+                  Download path:
+                  <input 
+                    type="text" 
+                    value={downloadSettings.customPath}
+                    onChange={(e) => setDownloadSettings({
+                      ...downloadSettings,
+                      customPath: e.target.value
+                    })}
+                    placeholder="Enter download path..."
+                    className="path-input"
+                  />
+                </label>
+                
+                {suggestedPaths.length > 0 && (
+                  <div className="suggested-paths">
+                    <label>Quick select:</label>
+                    <div className="path-buttons">
+                      {suggestedPaths.map((pathObj, index) => (
+                        <button
+                          key={index}
+                          className={`path-btn ${pathObj.exists ? 'exists' : 'create'}`}
+                          onClick={() => setDownloadSettings({
+                            ...downloadSettings,
+                            customPath: pathObj.path
+                          })}
+                        >
+                          {pathObj.exists ? '📁' : '📂'} {pathObj.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="setting-group">
+                <label className="setting-option">
+                  <input 
+                    type="checkbox" 
+                    checked={downloadSettings.autoCreateFolder}
+                    onChange={(e) => setDownloadSettings({
+                      ...downloadSettings,
+                      autoCreateFolder: e.target.checked
+                    })}
+                  />
+                  <span>Auto create folder (if not exists)</span>
+                </label>
+              </div>
+
+              <div className="setting-group">
+                <label>Folder organization:</label>
+                <div className="folder-naming-options">
+                  <label className="setting-option">
+                    <input 
+                      type="radio" 
+                      name="folderNaming" 
+                      value="date" 
+                      checked={downloadSettings.folderNaming === 'date'}
+                      onChange={(e) => setDownloadSettings({
+                        ...downloadSettings,
+                        folderNaming: e.target.value
+                      })}
+                    />
+                    <span>Group by date (e.g., 2025-06-30)</span>
+                  </label>
+                  <label className="setting-option">
+                    <input 
+                      type="radio" 
+                      name="folderNaming" 
+                      value="email" 
+                      checked={downloadSettings.folderNaming === 'email'}
+                      onChange={(e) => setDownloadSettings({
+                        ...downloadSettings,
+                        folderNaming: e.target.value
+                      })}
+                    />
+                    <span>Group by email subject</span>
+                  </label>
+                  <label className="setting-option">
+                    <input 
+                      type="radio" 
+                      name="folderNaming" 
+                      value="flat" 
+                      checked={downloadSettings.folderNaming === 'flat'}
+                      onChange={(e) => setDownloadSettings({
+                        ...downloadSettings,
+                        folderNaming: e.target.value
+                      })}
+                    />
+                    <span>No grouping (save directly to specified path)</span>
+                  </label>
+                </div>
+              </div>
+
+              <div className="setting-actions">
+                <button 
+                  className="btn btn-success" 
+                  onClick={() => updateDownloadSettings(downloadSettings)}
+                >
+                  <i className="fas fa-save"></i> Save Settings
+                </button>
+              </div>
+            </>
+          )}
+
+          <div className="settings-preview">
+            <h6>Preview save location:</h6>
+            <div className="preview-path">
+              {generatePathPreview()}
+            </div>
+          </div>
+
+          <div className="download-info">
+            <h5>Current download method:</h5>
+            <p>
+              {downloadSettings.useCustomPath 
+                ? `📁 Custom: ${downloadSettings.customPath || '(not set)'}`
+                : '🌐 Browser default download'
+              }
+            </p>
+          </div>
+        </div>
+      )}
+    </>
+  );
+
   return (
     <div className="app">
-      {/* Message notifications */}
       <div className="message-area">
         {messages.map(msg => (
           <div key={msg.id} className={`alert alert-${msg.type}`}>
@@ -473,7 +761,7 @@ function App() {
 
       <div className="container">
         <header className="header">
-          <h1><i className="fas fa-envelope-open-text"></i> Gmail and attachment to PDF</h1>
+          <h1><i className="fas fa-envelope-open-text"></i> Email and attachment to PDF</h1>
         </header>
 
         <div className="card status-card">
@@ -508,7 +796,6 @@ function App() {
         </div>
 
         <div className="main-content">
-          {/* Email list */}
           <div className="card">
             <h3><i className="fas fa-inbox"></i> Email list - {getProviderDisplayName(currentProvider)}</h3>
             <div className="button-group">
@@ -534,9 +821,15 @@ function App() {
                 <i className="fas fa-cog"></i>
                 Change setting {showModeSelector ? '▲' : '▼'}
               </button>
+              <button 
+                className="btn" 
+                onClick={handleToAuthUrl}
+                disabled={loading.auth}
+              >
+                Gmail Auth
+              </button>
             </div>
 
-            {/* Email provider selector */}
             {showProviderSelector && (
               <div className="provider-selector">
                 <h4>Select Email Service</h4>
@@ -565,7 +858,6 @@ function App() {
               </div>
             )}
 
-            {/* Convert mode selector */}
             {showModeSelector && (
               <div className="mode-selector">
                 <h4>Change mode</h4>
@@ -602,7 +894,6 @@ function App() {
                   </label>
                 </div>
 
-                {/* Attachment type selection */}
                 {convertMode === 'attachments_only' && (
                   <div className="attachment-types">
                     <h5>Attachment Type</h5>
@@ -657,7 +948,6 @@ function App() {
             </div>
           </div>
 
-          {/* Operation panel */}
           <div className="card">
             <h3><i className="fas fa-cogs"></i> Operation panel</h3>
             <div className="button-group">
@@ -687,6 +977,7 @@ function App() {
                 {loading.mergedFiles ? <span className="loading"></span> : <i className="fas fa-scissors"></i>}
                 PDF demerge {showDemergePanel ? '▲' : '▼'}
               </button>
+              {renderDownloadSettings()}
             </div>
             <button 
                 className="btn btn-danger" 
@@ -700,7 +991,6 @@ function App() {
                 Clean cache
               </button>
 
-            {/* Selected email info */}
             {selectedEmail && (
               <div className="selected-email-info">
                 <h4>Selected email message</h4>
@@ -731,7 +1021,6 @@ function App() {
               </div>
             )}
 
-            {/* Attachment list */}
             {attachments.length > 0 && (
               <div className="attachments-section">
                 <h4>Attachment list ({attachments.length} total, {attachments.filter(a => a.isPdf).length} PDF)</h4>
@@ -754,7 +1043,6 @@ function App() {
               </div>
             )}
 
-            {/* PDF demerge panel */}
             {showDemergePanel && (
               <div className="demerge-panel">
                 <h4>PDF demerge</h4>
@@ -803,7 +1091,6 @@ function App() {
                   </div>
                 )}
                 
-                {/* Demerge settings */}
                 {selectedMergedFile && (
                   <div className="demerge-settings">
                     <h5>Demerge setting - {selectedMergedFile.filename}</h5>
@@ -887,7 +1174,6 @@ function App() {
               </div>
             )}
 
-            {/* Download file list */}
             {downloads.length > 0 && (
               <div className="downloads-section">
                 <h4>Download ({downloads.length} in total)</h4>

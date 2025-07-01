@@ -10,9 +10,12 @@ const statusRoutes = require('./routes/status-routes');
 const demergeRoutes = require('./routes/demerge-routes');
 const providerRoutes = require('./routes/provider-routes');
 const outlookAuthRoutes = require('./routes/outlook-auth');
+const authRoutes = require('./routes/auth-routes');
+const { router: downloadSettingsRouter } = require('./routes/download-settings');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
@@ -29,13 +32,14 @@ if (!fs.existsSync(attachmentsDir)) {
     fs.mkdirSync(attachmentsDir, { recursive: true });
 }
 
-// 重要：outlook认证路由必须在通用providers路由之前注册
 app.use('/api/providers/outlook', outlookAuthRoutes);
 app.use('/api/providers', providerRoutes);
 app.use('/api/emails', emailRoutes);
 app.use('/api/attachments', attachmentRoutes);
 app.use('/api/status', statusRoutes);
 app.use('/api/demerge', demergeRoutes);
+app.use('/api/settings', downloadSettingsRouter);
+app.use('/api/auth', authRoutes);
 
 app.get('/api', (req, res) => {
     res.json({

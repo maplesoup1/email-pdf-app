@@ -136,6 +136,7 @@ body {
   gap: 8px;
   min-width: 120px;
   justify-content: center;
+  align-items: center;
 }
 
 .btn:hover:not(:disabled) {

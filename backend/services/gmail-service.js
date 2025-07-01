@@ -1,25 +1,43 @@
 const { google } = require('googleapis');
 const fs = require('fs');
 const path = require('path');
+const GmailAuthService = require('./multi-user-gmail-auth');
 
 class GmailService {
     constructor() {
         this.auth = null;
         this.gmail = null;
+        this.sessionId = null;
     }
 
-    async authenticate() {
-        const credentials = JSON.parse(fs.readFileSync('credentials.json'));
-        const { client_secret, client_id, redirect_uris } = credentials.web || credentials.installed;
-        this.auth = new google.auth.OAuth2(client_id, client_secret, redirect_uris[0]);
-        const token = JSON.parse(fs.readFileSync('token.json'));
-        this.auth.setCredentials(token);
-        this.gmail = google.gmail({ version: 'v1', auth: this.auth });
+    // 新增：设置 sessionId
+    setSessionId(sessionId) {
+        this.sessionId = sessionId;
+        this.auth = null;
+        this.gmail = null;
     }
 
-    async getLatestEmail() {
+    // 修改：使用多用户认证
+    async authenticate(sessionId = null) {
+        if (sessionId) {
+            this.sessionId = sessionId;
+        }
+        
+        if (!this.sessionId) {
+            throw new Error('SessionId is required for authentication');
+        }
+
+        // 使用 GmailAuthService 获取认证的 Gmail 客户端
+        this.gmail = await GmailAuthService.getGmailClient(this.sessionId);
+    }
+
+    async getLatestEmail(sessionId = null) {
+        if (sessionId) {
+            this.sessionId = sessionId;
+        }
+        
         if (!this.gmail) {
-            await this.authenticate();
+            await this.authenticate(sessionId);
         }
 
         const listResponse = await this.gmail.users.messages.list({
@@ -41,47 +59,54 @@ class GmailService {
         return this.parseEmailMessage(messageResponse.data);
     }
 
-    async getEmailList(maxResults = 10, pageToken = null) {
-        if (!this.gmail) {
-            await this.authenticate();
-        }
-
-        const listResponse = await this.gmail.users.messages.list({
+    // 修改：使用 sessionId 参数
+    async getEmailList(maxResults = 10, sessionId, pageToken = null) {
+        const gmail = await GmailAuthService.getGmailClient(sessionId);
+    
+        const listResponse = await gmail.users.messages.list({
             userId: 'me',
             maxResults: parseInt(maxResults),
             pageToken
         });
-        
+    
         const emails = [];
+    
         if (listResponse.data.messages) {
             for (const message of listResponse.data.messages) {
-                const messageResponse = await this.gmail.users.messages.get({
+                const messageResponse = await gmail.users.messages.get({
                     userId: 'me',
                     id: message.id,
                     format: 'metadata',
                     metadataHeaders: ['Subject', 'From', 'Date']
                 });
-                
+    
                 const headers = messageResponse.data.payload.headers;
                 emails.push({
                     messageId: message.id,
                     subject: headers.find(h => h.name === 'Subject')?.value || '',
                     from: headers.find(h => h.name === 'From')?.value || '',
                     date: headers.find(h => h.name === 'Date')?.value || '',
+                    receiveDate: messageResponse.data.internalDate ?
+                        new Date(parseInt(messageResponse.data.internalDate)).toISOString() : '',
                     snippet: messageResponse.data.snippet
                 });
             }
         }
-        
+    
         return {
             emails,
             nextPageToken: listResponse.data.nextPageToken
         };
     }
 
-    async getEmailById(messageId) {
+    // 修改：添加 sessionId 参数
+    async getEmailById(messageId, sessionId = null) {
+        if (sessionId) {
+            this.sessionId = sessionId;
+        }
+        
         if (!this.gmail) {
-            await this.authenticate();
+            await this.authenticate(sessionId);
         }
 
         const messageResponse = await this.gmail.users.messages.get({
@@ -99,42 +124,60 @@ class GmailService {
         const from = headers.find(h => h.name === 'From')?.value || '';
         const to = headers.find(h => h.name === 'To')?.value || '';
         const date = headers.find(h => h.name === 'Date')?.value || '';
-        
-        let body = '';
-        let isHtml = false;
-        
-        if (message.payload.body.data) {
-            body = Buffer.from(message.payload.body.data, 'base64').toString();
-            isHtml = message.payload.mimeType === 'text/html';
-        } else if (message.payload.parts) {
-            const htmlPart = message.payload.parts.find(part => part.mimeType === 'text/html');
-            if (htmlPart && htmlPart.body.data) {
-                body = Buffer.from(htmlPart.body.data, 'base64').toString();
-                isHtml = true;
-            } else {
-                const textPart = message.payload.parts.find(part => part.mimeType === 'text/plain');
-                if (textPart && textPart.body.data) {
-                    body = Buffer.from(textPart.body.data, 'base64').toString();
-                    isHtml = false;
+    
+        const findPartRecursively = (part, mimeType) => {
+            if (part.mimeType === mimeType && part.body && part.body.data) {
+                return part;
+            }
+            if (part.parts) {
+                for (const subPart of part.parts) {
+                    const result = findPartRecursively(subPart, mimeType);
+                    if (result) return result;
                 }
             }
+            return null;
+        };
+    
+        let body = '';
+        let isHtml = false;
+    
+        const htmlPart = findPartRecursively(message.payload, 'text/html');
+        if (htmlPart) {
+            body = Buffer.from(htmlPart.body.data, 'base64').toString('utf8');
+            isHtml = true;
+        } else {
+            const textPart = findPartRecursively(message.payload, 'text/plain');
+            if (textPart) {
+                body = Buffer.from(textPart.body.data, 'base64').toString('utf8');
+                isHtml = false;
+            } else if (message.payload.body?.data) {
+                body = Buffer.from(message.payload.body.data, 'base64').toString('utf8');
+                isHtml = message.payload.mimeType === 'text/html';
+            } else {
+                body = message.snippet || '';
+            }
         }
-        
+    
         return {
             messageId: message.id,
             subject,
             from,
             to,
             date,
-            body: body || message.snippet,
+            body,
             isHtml,
             payload: message.payload
         };
     }
 
-    async downloadAttachment(messageId, attachmentId, filename, downloadDir) {
-        if (!this.gmail) {
-            await this.authenticate();
+    // 修改：添加 sessionId 参数
+    async downloadAttachment(messageId, attachmentId, filename, downloadDir, sessionId = null) {
+        if (sessionId) {
+            this.sessionId = sessionId;
+        }
+        
+        if (!this.gmail || sessionId !== this.sessionId) {
+            await this.authenticate(sessionId);
         }
 
         const attachment = await this.gmail.users.messages.attachments.get({

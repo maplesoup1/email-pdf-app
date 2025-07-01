@@ -162,7 +162,6 @@ async function downloadAttachment(gmail, messageId, attachmentId, filename, down
     }
 }
 
-// 新增：合并PDF文件的函数
 async function mergePDFs(emailPdfBuffer, attachmentPdfPaths) {
     try {
         console.log('正在合并PDF文件...');

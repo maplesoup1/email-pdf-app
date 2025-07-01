@@ -96,7 +96,6 @@ router.get('/callback', async (req, res) => {
 
         const response = await clientApp.acquireTokenByCode(tokenRequest);
         
-        // 保存令牌
         const tokenData = {
             access_token: response.accessToken,
             refresh_token: response.refreshToken,

@@ -7,16 +7,18 @@ const HtmlService = require('./html-service');
 const PuppeteerService = require('./puppeteer');
 
 class EmailProcessor {
-    constructor() {
+    constructor(sessionId = null) {
         this.gmailService = new GmailService();
         this.attachmentService = new AttachmentService();
         this.pdfService = new PdfService();
         this.htmlService = new HtmlService();
         this.puppeteerService = new PuppeteerService();
+        this.sessionId = sessionId;
     }
 
     async processLatestEmail() {
-        const email = await this.gmailService.getLatestEmail();
+        
+        const email = await this.gmailService.getLatestEmail(null, this.sessionId);
         const attachments = this.attachmentService.detectAttachments(email.payload);
         const hasPdfAttachment = this.attachmentService.hasPdfAttachment(attachments);
 
@@ -86,7 +88,8 @@ class EmailProcessor {
                     email.messageId,
                     attachment.attachmentId,
                     attachment.filename,
-                    downloadDir
+                    downloadDir,
+                    this.sessionId
                 );
                 pdfAttachmentPaths.push(attachmentPath);
             }

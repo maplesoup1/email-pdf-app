@@ -40,7 +40,7 @@ router.get('/auth', async (req, res) => {
                 await gmailService.authenticate();
                 authStatus = 'authenticated';
             } catch (error) {
-                errorMessage = `认证失败: ${error.message}`;
+                errorMessage = `Fail: ${error.message}`;
                 authStatus = 'auth_failed';
             }
         }

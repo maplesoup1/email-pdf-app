@@ -3,16 +3,31 @@ const router = express.Router();
 const EmailProcessor = require('../services/email-processor');
 const EmailProviderService = require('../services/email-provider-service');
 const AttachmentService = require('../services/attachment-service');
+const GmailAuthService = require('../services/multi-user-gmail-auth');
+const { generateDownloadPath, ensureDirectory, loadSettings } = require('./download-settings');
 const fs = require('fs');
 const path = require('path');
 
 const emailProviderService = new EmailProviderService();
 const attachmentService = new AttachmentService();
 
+// Basic footer configuration - just page numbers and date
+const BASIC_FOOTER_CONFIG = {
+    footer: {
+        enabled: true,
+        showPageNumbers: true,
+        text: 'Generated on {datetime}',
+        fontSize: 9,
+        color: { r: 0.5, g: 0.5, b: 0.5 },
+        margin: 30,
+        alignment: 'center'
+    }
+};
+
 router.get('/latest', async (req, res) => {
     try {
-        const { provider } = req.query;
-        const email = await emailProviderService.getLatestEmail(provider);
+        const { provider, sessionId } = req.query;
+        const email = await emailProviderService.getLatestEmail(provider, sessionId);
         const attachments = await emailProviderService.getAttachments(email.messageId, provider);
         
         res.json({
@@ -34,13 +49,14 @@ router.get('/latest', async (req, res) => {
 
 router.get('/list', async (req, res) => {
     try {
-        const { maxResults = 10, pageToken, provider } = req.query;
-        const emailData = await emailProviderService.getEmailList(parseInt(maxResults), provider);
-        
+        const { maxResults = 10, sessionId, provider } = req.query;
+        const emailData = await emailProviderService.getEmailList(parseInt(maxResults), provider, sessionId);
+
         res.json({
             success: true,
             data: {
                 ...emailData,
+                sessionId,
                 provider: provider || emailProviderService.getCurrentProvider()
             }
         });
@@ -56,9 +72,10 @@ router.get('/:messageId', async (req, res) => {
     try {
         const { messageId } = req.params;
         const { provider } = req.query;
+        const { sessionId } = req.query;
         
-        const email = await emailProviderService.getEmailById(messageId, provider);
-        const attachments = await emailProviderService.getAttachments(messageId, provider);
+        const email = await emailProviderService.getEmailById(messageId, provider, sessionId);
+        const attachments = await emailProviderService.getAttachments(messageId, provider,sessionId);
         
         res.json({
             success: true,
@@ -79,14 +96,28 @@ router.get('/:messageId', async (req, res) => {
 
 router.post('/convert-latest', async (req, res) => {
     try {
-        const { mode = 'merged', attachmentTypes = [], provider } = req.body;
+        const { mode = 'merged', attachmentTypes = [], provider, downloadSettings, sessionId } = req.body;
         
-        const email = await emailProviderService.getLatestEmail(provider);
-        const attachments = await emailProviderService.getAttachments(email.messageId, provider);
+        const email = await emailProviderService.getLatestEmail(provider, sessionId);
+        const attachments = await emailProviderService.getAttachments(email.messageId, provider, sessionId);
         const hasPdfAttachment = attachmentService.hasPdfAttachment(attachments);
         
-        const downloadDir = path.join(__dirname, '../downloads');
-        const attachmentsDir = path.join(downloadDir, 'attachments');
+        const settings = downloadSettings || loadSettings();
+        let downloadDir, attachmentsDir;
+        
+        if (settings.useCustomPath) {
+            const customPath = generateDownloadPath(settings, email.subject, email.messageId);
+            if (customPath && ensureDirectory(customPath)) {
+                downloadDir = customPath;
+                attachmentsDir = customPath;
+            } else {
+                downloadDir = path.join(__dirname, '../downloads');
+                attachmentsDir = path.join(downloadDir, 'attachments');
+            }
+        } else {
+            downloadDir = path.join(__dirname, '../downloads');
+            attachmentsDir = path.join(downloadDir, 'attachments');
+        }
         
         if (!fs.existsSync(downloadDir)) {
             fs.mkdirSync(downloadDir, { recursive: true });
@@ -103,23 +134,23 @@ router.post('/convert-latest', async (req, res) => {
                 break;
                 
             case 'attachments_only':
-                result = await downloadAttachmentsOnly(email, attachments, attachmentsDir, attachmentTypes, provider);
+                result = await downloadAttachmentsOnly(email, attachments, attachmentsDir, attachmentTypes, provider, sessionId);
                 break;
                 
             case 'merged':
                 if (!hasPdfAttachment) {
-                    console.log('最新邮件没有PDF附件，自动降级为仅邮件模式');
+                    console.log('Latest email has no PDF attachments, fallback to email only mode');
                     result = await generateEmailOnlyPdf(email, attachments, downloadDir);
                     result.mode = 'merged_fallback';
                 } else {
-                    result = await generateMergedPdf(email, attachments, downloadDir, attachmentsDir, provider);
+                    result = await generateMergedPdf(email, attachments, downloadDir, attachmentsDir, provider,sessionId);
                 }
                 break;
                 
             case 'auto':
             default:
                 if (hasPdfAttachment) {
-                    result = await generateMergedPdf(email, attachments, downloadDir, attachmentsDir, provider);
+                    result = await generateMergedPdf(email, attachments, downloadDir, attachmentsDir, provider,sessionId);
                 } else {
                     result = await generateEmailOnlyPdf(email, attachments, downloadDir);
                 }
@@ -133,6 +164,8 @@ router.post('/convert-latest', async (req, res) => {
                 subject: email.subject,
                 mode: result.mode,
                 files: result.files,
+                downloadPath: settings.useCustomPath ? downloadDir : null,
+                useCustomPath: settings.useCustomPath,
                 attachmentCount: attachments.length,
                 pdfAttachmentCount: attachments.filter(a => a.isPdf).length,
                 provider: provider || emailProviderService.getCurrentProvider()
@@ -149,14 +182,33 @@ router.post('/convert-latest', async (req, res) => {
 router.post('/convert/:messageId', async (req, res) => {
     try {
         const { messageId } = req.params;
-        const { mode = 'merged', attachmentTypes = [], provider } = req.body;
-        
-        const email = await emailProviderService.getEmailById(messageId, provider);
-        const attachments = await emailProviderService.getAttachments(messageId, provider);
+        const { mode = 'merged', attachmentTypes = [], provider, downloadSettings, sessionId } = req.body;
+        const gmail = await GmailAuthService.getGmailClient(sessionId);
+        try {
+            await gmail.users.messages.get({ userId: 'me', id: messageId });
+          } catch {
+            throw new Error('Invalid messageId for this session. Possibly from a different Gmail account.');
+          }
+        const email = await emailProviderService.getEmailById(messageId, provider, sessionId);
+        const attachments = await emailProviderService.getAttachments(messageId, provider, sessionId);
         const hasPdfAttachment = attachmentService.hasPdfAttachment(attachments);
         
-        const downloadDir = path.join(__dirname, '../downloads');
-        const attachmentsDir = path.join(downloadDir, 'attachments');
+        const settings = downloadSettings || loadSettings();
+        let downloadDir, attachmentsDir;
+        
+        if (settings.useCustomPath) {
+            const customPath = generateDownloadPath(settings, email.subject, messageId);
+            if (customPath && ensureDirectory(customPath)) {
+                downloadDir = customPath;
+                attachmentsDir = customPath;
+            } else {
+                downloadDir = path.join(__dirname, '../downloads');
+                attachmentsDir = path.join(downloadDir, 'attachments');
+            }
+        } else {
+            downloadDir = path.join(__dirname, '../downloads');
+            attachmentsDir = path.join(downloadDir, 'attachments');
+        }
         
         if (!fs.existsSync(downloadDir)) {
             fs.mkdirSync(downloadDir, { recursive: true });
@@ -178,18 +230,18 @@ router.post('/convert/:messageId', async (req, res) => {
                 
             case 'merged':
                 if (!hasPdfAttachment) {
-                    console.log('没有PDF附件，自动降级为仅邮件模式');
+                    console.log('No PDF attachments, fallback to email only mode');
                     result = await generateEmailOnlyPdf(email, attachments, downloadDir);
                     result.mode = 'merged_fallback';
                 } else {
-                    result = await generateMergedPdf(email, attachments, downloadDir, attachmentsDir, provider);
+                    result = await generateMergedPdf(email, attachments, downloadDir, attachmentsDir, provider,sessionId);
                 }
                 break;
                 
             case 'auto':
             default:
                 if (hasPdfAttachment) {
-                    result = await generateMergedPdf(email, attachments, downloadDir, attachmentsDir, provider);
+                    result = await generateMergedPdf(email, attachments, downloadDir, attachmentsDir, provider),sessionId;
                 } else {
                     result = await generateEmailOnlyPdf(email, attachments, downloadDir);
                 }
@@ -203,9 +255,12 @@ router.post('/convert/:messageId', async (req, res) => {
                 subject: email.subject,
                 mode: result.mode,
                 files: result.files,
+                downloadPath: settings.useCustomPath ? downloadDir : null,
+                useCustomPath: settings.useCustomPath,
                 attachmentCount: attachments.length,
                 pdfAttachmentCount: attachments.filter(a => a.isPdf).length,
-                provider: provider || emailProviderService.getCurrentProvider()
+                provider: provider || emailProviderService.getCurrentProvider(),
+                sessionId
             }
         });
     } catch (error) {
@@ -216,12 +271,32 @@ router.post('/convert/:messageId', async (req, res) => {
     }
 });
 
-async function generateEmailOnlyPdf(email, attachments, downloadDir) {
+// Helper function to add basic footer to PDF
+async function addBasicFooterToPdf(pdfPath) {
     const emailProcessor = new EmailProcessor();
+    
+    if (fs.existsSync(pdfPath)) {
+        try {
+            const pdfBuffer = fs.readFileSync(pdfPath);
+            const enhancedPdfBuffer = await emailProcessor.pdfService.createEmailOnlyPDF(pdfBuffer, BASIC_FOOTER_CONFIG);
+            fs.writeFileSync(pdfPath, enhancedPdfBuffer);
+            console.log(`✅ Added basic footer to: ${path.basename(pdfPath)}`);
+        } catch (error) {
+            console.error(`Failed to add footer to ${path.basename(pdfPath)}:`, error.message);
+        }
+    }
+}
+
+async function generateEmailOnlyPdf(email, attachments, downloadDir, sessionId) {
+    const emailProcessor = new EmailProcessor(sessionId);
     const fileName = emailProcessor.pdfService.generateSafeFileName(email.subject, email.messageId);
     const outputPath = path.join(downloadDir, fileName);
     
+    // Generate the PDF
     await emailProcessor.generateEmailOnlyPdf(email, attachments, outputPath);
+    
+    // Add basic footer with page information
+    await addBasicFooterToPdf(outputPath);
     
     return {
         mode: 'email_only',
@@ -229,7 +304,7 @@ async function generateEmailOnlyPdf(email, attachments, downloadDir) {
             type: 'email_pdf',
             filename: fileName,
             path: outputPath,
-            size: fs.statSync(outputPath).size
+            size: fs.existsSync(outputPath) ? fs.statSync(outputPath).size : 0
         }]
     };
 }
@@ -273,7 +348,7 @@ async function downloadAttachmentsOnly(email, attachments, attachmentsDir, attac
                 isPdf: attachment.isPdf
             });
         } catch (error) {
-            console.error(`下载附件失败 ${attachment.filename}:`, error.message);
+            console.error(`Download attachment failed ${attachment.filename}:`, error.message);
         }
     }
     
@@ -283,12 +358,16 @@ async function downloadAttachmentsOnly(email, attachments, attachmentsDir, attac
     };
 }
 
-async function generateMergedPdf(email, attachments, downloadDir, attachmentsDir, provider) {
-    const emailProcessor = new EmailProcessor();
-    const fileName = emailProcessor.pdfService.generateSafeFileName(email.subject + '_merged', email.messageId);
+async function generateMergedPdf(email, attachments, downloadDir, attachmentsDir, provider,sessionId) {
+    const emailProcessor = new EmailProcessor(sessionId);
+    const fileName = emailProcessor.pdfService.generateSafeFileName(email.subject, email.messageId, true);
     const outputPath = path.join(downloadDir, fileName);
     
-    const result = await emailProcessor.generateMergedPdf(email, attachments, outputPath, attachmentsDir, provider);
+    // Generate the merged PDF
+    await emailProcessor.generateMergedPdf(email, attachments, outputPath, attachmentsDir, provider);
+    
+    // Add basic footer with page information
+    await addBasicFooterToPdf(outputPath);
     
     return {
         mode: 'merged',
@@ -296,7 +375,7 @@ async function generateMergedPdf(email, attachments, downloadDir, attachmentsDir
             type: 'merged_pdf',
             filename: fileName,
             path: outputPath,
-            size: fs.statSync(outputPath).size,
+            size: fs.existsSync(outputPath) ? fs.statSync(outputPath).size : 0,
             merged: true
         }]
     };
@@ -310,7 +389,7 @@ router.get('/download/:filename', (req, res) => {
         if (!fs.existsSync(filePath)) {
             return res.status(404).json({
                 success: false,
-                error: '文件不存在'
+                error: 'File not found'
             });
         }
         
@@ -335,7 +414,7 @@ router.delete('/downloads/:filename', (req, res) => {
         if (!fs.existsSync(filePath)) {
             return res.status(404).json({
                 success: false,
-                error: '文件不存在'
+                error: 'File not found'
             });
         }
         
@@ -343,7 +422,7 @@ router.delete('/downloads/:filename', (req, res) => {
         
         res.json({
             success: true,
-            message: '文件删除成功'
+            message: 'File deleted successfully'
         });
     } catch (error) {
         res.status(500).json({

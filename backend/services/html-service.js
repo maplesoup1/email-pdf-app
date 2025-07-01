@@ -8,13 +8,13 @@ class HtmlService {
         if (attachments && attachments.length > 0) {
             attachmentHTML = `
             <div class="attachments-section">
-                <h3>附件信息:</h3>
+                <h3>Attachment information:</h3>
                 <ul>
                     ${attachments.map(att => `
                         <li>
                             <strong>${att.filename}</strong> 
                             (${att.mimeType}, ${(att.size / 1024).toFixed(2)} KB)
-                            ${att.isPdf ? '<span class="pdf-badge">PDF文件</span>' : ''}
+                            ${att.isPdf ? '<span class="pdf-badge">PDF file</span>' : ''}
                         </li>
                     `).join('')}
                 </ul>
@@ -100,18 +100,14 @@ class HtmlService {
         <body>
             <div class="email-header">
                 <div class="email-subject">${subject}</div>
-                <div class="email-meta"><strong>发件人:</strong> ${from}</div>
-                <div class="email-meta"><strong>收件人:</strong> ${to}</div>
-                <div class="email-meta"><strong>日期:</strong> ${date}</div>
+                <div class="email-meta"><strong>From:</strong> ${from}</div>
+                <div class="email-meta"><strong>To:</strong> ${to}</div>
+                <div class="email-meta"><strong>Date:</strong> ${date}</div>
                 ${attachmentHTML}
             </div>
             
             <div class="email-body">
                 ${emailBody}
-            </div>
-            
-            <div class="generated-info">
-                此PDF由Gmail邮件转换工具生成 - ${new Date().toLocaleString('zh-CN')}
             </div>
         </body>
         </html>

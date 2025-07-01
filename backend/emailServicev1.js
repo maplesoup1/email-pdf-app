@@ -41,7 +41,8 @@ async function getLatestEmail() {
             from,
             to,
             date,
-            body: body || message.snippet
+            body: body || message.snippet,
+            messageId
         };
 
     } catch (error) {
