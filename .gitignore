@@ -19,7 +19,7 @@ yarn-error.log*
 .env.development.local
 .env.test.local
 .env.production.local
-/user_tokens/
+/backend/user_tokens/
 # Google OAuth credentials
 client_secret.json
 credentials.json
