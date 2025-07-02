@@ -13,7 +13,6 @@ const { router: downloadSettingsRouter } = require('./routes/download-routes');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
@@ -28,6 +27,7 @@ if (!fs.existsSync(downloadsDir)) {
 if (!fs.existsSync(attachmentsDir)) {
     fs.mkdirSync(attachmentsDir, { recursive: true });
 }
+
 app.use('/api/emails', emailRoutes);
 app.use('/api/attachments', attachmentRoutes);
 app.use('/api/demerge', demergeRoutes);
@@ -40,26 +40,31 @@ app.get('/api', (req, res) => {
         message: 'Gmail PDF Converter API',
         version: '1.0.0',
         endpoints: {
+            auth: {
+                'GET /api/auth/start': 'Start Gmail authentication',
+                'GET /api/auth/callback': 'OAuth callback',
+                'GET /api/auth/emails/:sessionId': 'Get email list',
+                'DELETE /api/auth/users/:sessionId': 'Delete user session'
+            },
             emails: {
-                'GET /api/emails/latest': 'Get latest email',
                 'GET /api/emails/list': 'Get email list',
                 'GET /api/emails/:messageId': 'Get specific email',
-                'POST /api/emails/convert-latest': 'Convert latest email to PDF',
-                'POST /api/emails/convert/:messageId': 'Convert specific email to PDF',
-                'GET /api/emails/download/:filename': 'Download PDF file',
-                'DELETE /api/emails/downloads/:filename': 'Delete PDF file'
+                'POST /api/emails/convert/:messageId': 'Convert email to PDF',
+                'GET /api/emails/:messageId/download/:attachmentId': 'Download attachment'
             },
             attachments: {
                 'GET /api/attachments/:messageId/list': 'Get email attachment list',
                 'POST /api/attachments/:messageId/download/:attachmentId': 'Download specific attachment',
-                'GET /api/attachments/download/:filename': 'Download attachment file',
-                'POST /api/attachments/:messageId/download-all': 'Download all attachments',
-                'DELETE /api/attachments/cleanup/:messageId': 'Clean attachment files'
+                'POST /api/attachments/:messageId/download-all': 'Download all attachments'
             },
             demerge: {
                 'GET /api/demerge/list': 'Get merged PDF files',
                 'POST /api/demerge/split/:filename': 'Split merged PDF',
                 'GET /api/demerge/analyze/:filename': 'Analyze PDF structure'
+            },
+            settings: {
+                'GET /api/settings': 'Get download settings',
+                'POST /api/settings': 'Update download settings'
             }
         }
     });
@@ -84,9 +89,8 @@ app.use((error, req, res, next) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`🚀 Server running at http://localhost:3000`);
-    console.log(`📚 API Documentation: http://localhost:3000/api`);
-    console.log(`🏥 Health Check: http://localhost:3000/api/status/health`);
+    console.log(`🚀 Server running at http://localhost:${PORT}`);
+    console.log(`📚 API Documentation: http://localhost:${PORT}/api`);
 });
 
 module.exports = app;

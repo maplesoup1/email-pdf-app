@@ -1,4 +1,3 @@
-//Main Service
 const fs = require('fs');
 const path = require('path');
 const GmailService = require('./gmail-service');
@@ -17,54 +16,34 @@ class EmailProcessor {
         this.sessionId = sessionId;
     }
 
-    // async processLatestEmail() {
+    async processEmail(messageId, outputDir = null) {
+        const email = await this.gmailService.getEmailById(messageId, this.sessionId);
+        const attachments = this.attachmentService.detectAttachments(email.payload);
+        const hasPdfAttachment = this.attachmentService.hasPdfAttachment(attachments);
+
+        const fileName = this.pdfService.generateSafeFileName(
+            email.subject, 
+            email.messageId, 
+            hasPdfAttachment
+        );
         
-    //     const email = await this.gmailService.getLatestEmail(null, this.sessionId);
-    //     const attachments = this.attachmentService.detectAttachments(email.payload);
-    //     const hasPdfAttachment = this.attachmentService.hasPdfAttachment(attachments);
+        const downloadDir = outputDir || path.join(__dirname, 'downloads');
+        const outputPath = path.join(downloadDir, fileName);
 
-    //     console.log('=== 邮件信息 ===');
-    //     console.log('主题:', email.subject);
-    //     console.log('发件人:', email.from);
-    //     console.log('日期:', email.date);
-    //     console.log('内容预览:', email.body.substring(0, 100) + '...');
+        if (!fs.existsSync(downloadDir)) {
+            fs.mkdirSync(downloadDir, { recursive: true });
+        }
 
-    //     if (attachments.length > 0) {
-    //         console.log('\n=== 附件信息 ===');
-    //         attachments.forEach((att, index) => {
-    //             console.log(`${index + 1}. ${att.filename}`);
-    //             console.log(`   类型: ${att.mimeType}`);
-    //             console.log(`   大小: ${(att.size / 1024).toFixed(2)} KB`);
-    //             console.log(`   是否PDF: ${att.isPdf ? '是' : '否'}`);
-    //         });
+        const result = await this.generatePdf(email, attachments, hasPdfAttachment, outputPath, downloadDir);
 
-    //         if (hasPdfAttachment) {
-    //             console.log('\n✅ 发现PDF附件，将进行合并导出!');
-    //         } else {
-    //             console.log('\n⚠️  未发现PDF附件，仅导出邮件内容');
-    //         }
-    //     } else {
-    //         console.log('\n📎 无附件，仅导出邮件内容');
-    //     }
-
-    //     const fileName = this.pdfService.generateSafeFileName(email.subject, email.messageId);
-    //     const outputPath = path.join(__dirname, 'downloads', fileName);
-    //     const downloadDir = path.dirname(outputPath);
-
-    //     if (!fs.existsSync(downloadDir)) {
-    //         fs.mkdirSync(downloadDir, { recursive: true });
-    //     }
-
-    //     const result = await this.generatePdf(email, attachments, hasPdfAttachment, outputPath, downloadDir);
-
-    //     return {
-    //         ...email,
-    //         attachments,
-    //         pdfPath: outputPath,
-    //         merged: hasPdfAttachment,
-    //         ...result
-    //     };
-    // }
+        return {
+            ...email,
+            attachments,
+            pdfPath: outputPath,
+            merged: hasPdfAttachment,
+            ...result
+        };
+    }
 
     async generatePdf(email, attachments, hasPdfAttachment, outputPath, downloadDir) {
         if (hasPdfAttachment) {
@@ -77,6 +56,7 @@ class EmailProcessor {
     async generateMergedPdf(email, attachments, outputPath, downloadDir) {
         const htmlContent = this.htmlService.createEmailHTML(email, attachments);
         const emailPdfBuffer = await this.puppeteerService.convertHtmlToPdf(htmlContent, null, true);
+        
         const pdfAttachmentPaths = [];
         for (const attachment of attachments) {
             if (attachment.isPdf) {
@@ -90,16 +70,66 @@ class EmailProcessor {
                 pdfAttachmentPaths.push(attachmentPath);
             }
         }
+        const attachmentPageInfo = await this.analyzeAttachmentPages(email, attachments, pdfAttachmentPaths);
         const mergedPdfBuffer = await this.pdfService.mergePDFs(emailPdfBuffer, pdfAttachmentPaths);
         fs.writeFileSync(outputPath, mergedPdfBuffer);
+
         this.pdfService.cleanupTempFiles(pdfAttachmentPaths);
+
         return { merged: true };
     }
 
+
+
     async generateEmailOnlyPdf(email, attachments, outputPath) {
         const htmlContent = this.htmlService.createEmailHTML(email, attachments);
-        await this.puppeteerService.convertHtmlToPdf(htmlContent, outputPath);
+        const emailPdfBuffer = await this.puppeteerService.convertHtmlToPdf(htmlContent, null, true);
+        const processedPdfBuffer = await this.pdfService.createEmailOnlyPDF(emailPdfBuffer);
+        
+        fs.writeFileSync(outputPath, processedPdfBuffer);
+        
         return { merged: false };
+    }
+
+    setSessionId(sessionId) {
+        this.sessionId = sessionId;
+        this.gmailService.setSessionId(sessionId);
+    }
+    
+
+    async analyzeAttachmentPages(attachments, pdfAttachmentPaths) {
+        const attachmentPageInfo = [];
+        
+        for (let i = 0; i < attachments.length; i++) {
+            const attachment = attachments[i];
+            
+            if (attachment.isPdf && pdfAttachmentPaths[i]) {
+                try {
+                    const pdfBuffer = fs.readFileSync(pdfAttachmentPaths[i]);
+                    const pdf = await PDFDocument.load(pdfBuffer);
+                    const pageCount = pdf.getPageCount();
+                    
+                    attachmentPageInfo.push({
+                        originalName: attachment.filename,
+                        pageCount: pageCount,
+                        attachmentId: attachment.attachmentId,
+                        mimeType: attachment.mimeType,
+                        size: attachment.size
+                    });
+                } catch (error) {
+                    console.error(`Failed to analyze PDF ${attachment.filename}:`, error);
+                    attachmentPageInfo.push({
+                        originalName: attachment.filename,
+                        pageCount: 1,
+                        attachmentId: attachment.attachmentId,
+                        mimeType: attachment.mimeType,
+                        size: attachment.size
+                    });
+                }
+            }
+        }
+        
+        return attachmentPageInfo;
     }
 }
 

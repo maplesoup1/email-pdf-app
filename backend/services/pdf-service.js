@@ -55,19 +55,22 @@ class PdfService {
         return processedPdfBuffer;
     }
 
-    async demergePDF(mergedPdfPath, emailPageCount, attachmentInfo, outputDir = path.dirname(mergedPdfPath)) {
+    async demergePDF(mergedPdfPath, emailPageCount, attachmentInfo, outputDir) {
         const mergedPdfBuffer = fs.readFileSync(mergedPdfPath);
         const mergedPdf = await PDFDocument.load(mergedPdfBuffer);
         const totalPages = mergedPdf.getPageCount();
         const results = [];
+    
         if (!fs.existsSync(outputDir)) {
             fs.mkdirSync(outputDir, { recursive: true });
         }
+    
+        // 创建邮件PDF
         if (emailPageCount > 0) {
             const emailPdf = await PDFDocument.create();
             const emailPages = await emailPdf.copyPages(mergedPdf, Array.from({ length: emailPageCount }, (_, i) => i));
             emailPages.forEach(page => emailPdf.addPage(page));
-            // Add basic footer to email-only PDF
+            
             await this.addBasicFooter(emailPdf);
             const emailPdfBuffer = await emailPdf.save();
             const emailFilename = path.basename(mergedPdfPath).replace('_merged', '_email_only');
@@ -82,28 +85,27 @@ class PdfService {
                 pageCount: emailPageCount
             });
         }
+    
+        // 按每个attachment单独拆分
         let currentPageIndex = emailPageCount;
-
         for (const attachment of attachmentInfo) {
             if (currentPageIndex >= totalPages) break;
-
+    
             const attachmentPdf = await PDFDocument.create();
             const endPageIndex = Math.min(currentPageIndex + attachment.pageCount, totalPages);
             const pageIndices = Array.from({ length: endPageIndex - currentPageIndex }, (_, i) => currentPageIndex + i);
-
+    
             if (pageIndices.length > 0) {
                 const attachmentPages = await attachmentPdf.copyPages(mergedPdf, pageIndices);
                 attachmentPages.forEach(page => attachmentPdf.addPage(page));
-
-                // Add basic footer to attachment PDF
+    
                 await this.addBasicFooter(attachmentPdf);
-
                 const attachmentPdfBuffer = await attachmentPdf.save();
                 const attachmentFilename = `demerged_${attachment.originalName}`;
                 const attachmentPath = path.join(outputDir, attachmentFilename);
-
+    
                 fs.writeFileSync(attachmentPath, attachmentPdfBuffer);
-
+    
                 results.push({
                     type: 'attachment',
                     filename: attachmentFilename,
@@ -111,12 +113,11 @@ class PdfService {
                     originalName: attachment.originalName,
                     pageCount: pageIndices.length
                 });
-
+    
                 currentPageIndex = endPageIndex;
             }
         }
-
-        console.log('✅ PDF分离完成');
+    
         return results;
     }
 

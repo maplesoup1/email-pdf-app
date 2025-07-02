@@ -7,13 +7,7 @@ function App() {
   const [emails, setEmails] = useState([]);
   const [selectedEmail, setSelectedEmail] = useState(null);
   const [loading, setLoading] = useState({});
-  const [load, setLoad] = useState({});
   const [messages, setMessages] = useState([]);
-  const [downloads, setDownloads] = useState([]);
-  const [attachments, setAttachments] = useState([]);
-  const [convertMode, setConvertMode] = useState('merged');
-  const [attachmentTypes, setAttachmentTypes] = useState([]);
-  const [showModeSelector, setShowModeSelector] = useState(false);
   const [mergedFiles, setMergedFiles] = useState([]);
   const [showDemergePanel, setShowDemergePanel] = useState(false);
   const [selectedMergedFile, setSelectedMergedFile] = useState(null);
@@ -21,16 +15,11 @@ function App() {
     emailPageCount: 1,
     attachmentInfo: []
   });
-  
   const [downloadSettings, setDownloadSettings] = useState({
     useCustomPath: false,
-    customPath: '',
-    autoCreateFolder: true,
-    folderNaming: 'date'
+    customPath: ''
   });
   const [showDownloadSettings, setShowDownloadSettings] = useState(false);
-  const [suggestedPaths, setSuggestedPaths] = useState([]);
-
 
   const formatFileSize = (bytes) => {
     if (bytes === 0) return '0 B';
@@ -40,29 +29,13 @@ function App() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
-  const validateSession = async (sessionId) => {
-    try {
-      const res = await fetch(`${API_BASE}/auth/validate/${sessionId}`);
-      const data = await res.json();
-      return data.valid; // true or false
-    } catch (e) {
-      return false;
-    }
-  };
-
   const handleToAuthUrl = async () => {
     try {
-      setLoad(prev => ({ ...prev, auth: true }));
-  
-      const oldSessionId = localStorage.getItem('sessionId');
-      if (oldSessionId) {
-        const valid = await validateSession(oldSessionId);
-        if (!valid) {
-          localStorage.removeItem('sessionId');
-        }
-      }
+      setLoadingState('auth', true);
+      
       const response = await fetch(`${API_BASE}/auth/start`);
       const res = await response.json();
+      
       if (res.authUrl && res.sessionId) {
         localStorage.setItem('sessionId', res.sessionId);
         window.open(res.authUrl, '_blank');
@@ -74,7 +47,7 @@ function App() {
       console.error('Failed to get auth URL:', error);
       showMessage('Failed to get authentication URL', 'error');
     } finally {
-      setLoad(prev => ({ ...prev, auth: false }));
+      setLoadingState('auth', false);
     }
   };
 
@@ -105,12 +78,7 @@ function App() {
       });
       
       const data = await response.json();
-      
-      if (!data.success) {
-        throw new Error(data.error || 'Request failed');
-      }
-      
-      return data.data;
+      return data;
     } catch (error) {
       console.error('API call failed:', error);
       showMessage(`Error: ${error.message}`, 'error');
@@ -118,33 +86,30 @@ function App() {
     }
   };
 
-  const getSuggestedPaths = async () => {
-    try {
-      const result = await apiCall('/settings/suggested-paths');
-      setSuggestedPaths(result.suggestions || []);
-    } catch (error) {
-      console.error('Failed to get suggested paths:', error);
-    }
-  };
-
   const updateDownloadSettings = async (newSettings) => {
     try {
-      const result = await apiCall('/settings/download-path', {
+      const result = await apiCall('/settings', {
         method: 'POST',
         body: JSON.stringify(newSettings)
       });
       
-      setDownloadSettings(result);
-      showMessage('Download settings saved successfully', 'success');
+      if (result.success) {
+        setDownloadSettings(result.data);
+        showMessage('Download settings saved successfully', 'success');
+      } else {
+        throw new Error(result.error || 'Failed to save settings');
+      }
     } catch (error) {
-      // Error already shown by apiCall
+      showMessage(`Error saving settings: ${error.message}`, 'error');
     }
   };
 
   const getDownloadSettings = async () => {
     try {
-      const settings = await apiCall('/settings/download-path');
-      setDownloadSettings(settings);
+      const result = await apiCall('/settings');
+      if (result.success) {
+        setDownloadSettings(result.data);
+      }
     } catch (error) {
       console.error('Failed to get download settings:', error);
     }
@@ -152,27 +117,14 @@ function App() {
 
   const generatePathPreview = () => {
     if (!downloadSettings.useCustomPath || !downloadSettings.customPath) {
-      return 'Use browser default download location';
+      return 'Use server default download location';
     }
-    
-    let previewPath = downloadSettings.customPath;
-    
-    if (downloadSettings.folderNaming === 'date') {
-      const today = new Date().toISOString().split('T')[0];
-      previewPath += `/${today}`;
-    } else if (downloadSettings.folderNaming === 'email') {
-      previewPath += '/[Email Subject]';
-    }
-    
-    return previewPath;
+    return downloadSettings.customPath;
   };
 
   useEffect(() => {
     getDownloadSettings();
-    getSuggestedPaths();
   }, []);
-
-
 
   const loadEmails = async () => {
     setLoadingState('emails', true);
@@ -185,9 +137,13 @@ function App() {
     }
   
     try {
-      const emailData = await apiCall(`/emails/list?maxResults=20&sessionId=${sessionId}`);
-      setEmails(emailData.emails);
-      showMessage(`Successfully loaded ${emailData.emails.length} emails from session`, 'success');
+      const response = await apiCall(`/emails/list?sessionId=${sessionId}&maxResults=20`);
+      if (response.success) {
+        setEmails(response.data.emails);
+        showMessage(`Successfully loaded ${response.data.emails.length} emails`, 'success');
+      } else {
+        throw new Error(response.error || 'Failed to load emails');
+      }
     } catch (error) {
       console.error('Failed to load emails:', error);
       setEmails([]);
@@ -196,11 +152,9 @@ function App() {
       setLoadingState('emails', false);
     }
   };
-  
 
   const selectEmail = (email) => {
     setSelectedEmail(email);
-    setAttachments([]);
   };
 
   const convertSelectedEmail = async () => {
@@ -215,110 +169,39 @@ function App() {
       const result = await apiCall(`/emails/convert/${selectedEmail.messageId}`, { 
         method: 'POST',
         body: JSON.stringify({ 
-          mode: convertMode,
-          attachmentTypes: attachmentTypes,
-          downloadSettings: downloadSettings,
-          sessionId: sessionId
+          sessionId: sessionId,
+          outputDir: downloadSettings.useCustomPath ? downloadSettings.customPath : undefined
         })
       });
       
-      if (result.useCustomPath && result.downloadPath) {
-        showMessage(`Files saved to: ${result.downloadPath}`, 'info');
+      if (result.success) {
+        showMessage('Email converted successfully!', 'success');
+        if (result.data.pdfPath) {
+          showMessage(`PDF saved as: ${result.data.fileName}`, 'info');
+        }
       } else {
-        result.files.forEach(file => {
-          if (file.type === 'email_pdf' || file.type === 'merged_pdf') {
-            window.open(`${API_BASE}/emails/download/${file.filename}`);
-          } else if (file.type === 'attachment') {
-            window.open(`${API_BASE}/attachments/download/${file.filename}`);
-          }
-        });
+        throw new Error(result.error || 'Conversion failed');
       }
     } catch (error) {
-      // Error already shown by apiCall
+      showMessage(`Conversion failed: ${error.message}`, 'error');
     } finally {
       setLoadingState('convertSelected', false);
-    }
-  };
-
-  // const viewAttachments = async () => {
-  //   if (!selectedEmail) {
-  //     showMessage('Please select an email first', 'error');
-  //     return;
-  //   }
-    
-  //   setLoadingState('attachments', true);
-  //   try {
-  //     setAttachments(attachmentData.attachments);
-      
-  //     if (attachmentData.attachments.length === 0) {
-  //       showMessage('This email has no attachments', 'info');
-  //     }
-  //   } catch (error) {
-  //     setAttachments([]);
-  //   } finally {
-  //     setLoadingState('attachments', false);
-  //   }
-  // };
-
-  // const downloadAttachment = async (attachmentId, filename) => {
-  //   try {
-  //     await apiCall(`/attachments/${selectedEmail.messageId}/download/${attachmentId}?provider=${currentProvider}`, {
-  //       method: 'POST',
-  //       body: JSON.stringify({ filename })
-  //     });
-      
-  //     window.open(`${API_BASE}/attachments/download/${filename}`);
-  //     showMessage('Attachment download successful', 'success');
-  //   } catch (error) {
-  //     // Error already shown by apiCall
-  //   }
-  // };
-
-  const loadDownloads = async () => {
-    setLoadingState('downloads', true);
-    try {
-      const downloadsData = await apiCall('/status/downloads');
-      const downloadList = [
-        ...downloadsData.convertedEmails.map(file => ({ ...file, type: 'email' })),
-        ...downloadsData.attachmentFiles.map(file => ({ ...file, type: 'attachment' }))
-      ].sort((a, b) => new Date(b.created) - new Date(a.created));
-      
-      setDownloads(downloadList);
-    } catch (error) {
-      setDownloads([]);
-    } finally {
-      setLoadingState('downloads', false);
     }
   };
 
   const loadMergedFiles = async () => {
     setLoadingState('mergedFiles', true);
     try {
-      const mergedData = await apiCall('/demerge/list');
-      setMergedFiles(mergedData);
+      const result = await apiCall('/demerge/list');
+      if (result.success) {
+        setMergedFiles(result.data);
+      } else {
+        setMergedFiles([]);
+      }
     } catch (error) {
       setMergedFiles([]);
     } finally {
       setLoadingState('mergedFiles', false);
-    }
-  };
-
-  const analyzeMergedFile = async (filename) => {
-    setLoadingState('analyze', true);
-    try {
-      const analysis = await apiCall(`/demerge/analyze/${filename}`);
-      setDemergeSettings({
-        emailPageCount: analysis.estimatedEmailPages,
-        attachmentInfo: analysis.suggestedSplit.filter(s => s.type === 'attachment').map(s => ({
-          originalName: s.originalName,
-          pageCount: s.pageCount
-        }))
-      });
-      showMessage('PDF analysis completed', 'success');
-    } catch (error) {
-      // Error already shown by apiCall
-    } finally {
-      setLoadingState('analyze', false);
     }
   };
 
@@ -330,44 +213,16 @@ function App() {
         body: JSON.stringify(demergeSettings)
       });
       
-      showMessage(`Split successful! Generated ${result.separatedFiles.length} files`, 'success');
-      
-      result.separatedFiles.forEach((file, index) => {
-        const downloadUrl = file.type === 'email' 
-          ? `${API_BASE}/emails/download/${file.filename}`
-          : `${API_BASE}/attachments/download/${file.filename}`;
-        setTimeout(() => window.open(downloadUrl), index * 500);
-      });
-      await loadMergedFiles();
+      if (result.success) {
+        showMessage(`Split successful! Generated ${result.data.separatedFiles.length} files`, 'success');
+        await loadMergedFiles();
+      } else {
+        throw new Error(result.error || 'Split failed');
+      }
     } catch (error) {
-      // Error already shown by apiCall
+      showMessage(`Split failed: ${error.message}`, 'error');
     } finally {
       setLoadingState('demerge', false);
-    }
-  };
-
-  const downloadFile = (filename, type) => {
-    const url = type === 'email' 
-      ? `${API_BASE}/emails/download/${filename}`
-      : `${API_BASE}/attachments/download/${filename}`;
-    window.open(url);
-  };
-
-  const deleteFile = async (filename, type) => {
-    if (!window.confirm(`Are you sure you want to delete file "${filename}"?`)) {
-      return;
-    }
-    
-    try {
-      const endpoint = type === 'email' 
-        ? `/emails/downloads/${filename}`
-        : `/attachments/cleanup/${filename}`;
-        
-      await apiCall(endpoint, { method: 'DELETE' });
-      
-      showMessage('File deleted successfully', 'success');
-      await loadDownloads();
-    } catch (error) {
     }
   };
 
@@ -413,89 +268,10 @@ function App() {
                       ...downloadSettings,
                       customPath: e.target.value
                     })}
-                    placeholder="Enter download path..."
+                    placeholder="Enter absolute path (e.g., /Users/username/Downloads)"
                     className="path-input"
                   />
                 </label>
-                
-                {suggestedPaths.length > 0 && (
-                  <div className="suggested-paths">
-                    <label>Quick select:</label>
-                    <div className="path-buttons">
-                      {suggestedPaths.map((pathObj, index) => (
-                        <button
-                          key={index}
-                          className={`path-btn ${pathObj.exists ? 'exists' : 'create'}`}
-                          onClick={() => setDownloadSettings({
-                            ...downloadSettings,
-                            customPath: pathObj.path
-                          })}
-                        >
-                          {pathObj.exists ? '📁' : '📂'} {pathObj.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="setting-group">
-                <label className="setting-option">
-                  <input 
-                    type="checkbox" 
-                    checked={downloadSettings.autoCreateFolder}
-                    onChange={(e) => setDownloadSettings({
-                      ...downloadSettings,
-                      autoCreateFolder: e.target.checked
-                    })}
-                  />
-                  <span>Auto create folder (if not exists)</span>
-                </label>
-              </div>
-
-              <div className="setting-group">
-                <label>Folder organization:</label>
-                <div className="folder-naming-options">
-                  <label className="setting-option">
-                    <input 
-                      type="radio" 
-                      name="folderNaming" 
-                      value="date" 
-                      checked={downloadSettings.folderNaming === 'date'}
-                      onChange={(e) => setDownloadSettings({
-                        ...downloadSettings,
-                        folderNaming: e.target.value
-                      })}
-                    />
-                    <span>Group by date (e.g., 2025-06-30)</span>
-                  </label>
-                  <label className="setting-option">
-                    <input 
-                      type="radio" 
-                      name="folderNaming" 
-                      value="email" 
-                      checked={downloadSettings.folderNaming === 'email'}
-                      onChange={(e) => setDownloadSettings({
-                        ...downloadSettings,
-                        folderNaming: e.target.value
-                      })}
-                    />
-                    <span>Group by email subject</span>
-                  </label>
-                  <label className="setting-option">
-                    <input 
-                      type="radio" 
-                      name="folderNaming" 
-                      value="flat" 
-                      checked={downloadSettings.folderNaming === 'flat'}
-                      onChange={(e) => setDownloadSettings({
-                        ...downloadSettings,
-                        folderNaming: e.target.value
-                      })}
-                    />
-                    <span>No grouping (save directly to specified path)</span>
-                  </label>
-                </div>
               </div>
 
               <div className="setting-actions">
@@ -515,16 +291,6 @@ function App() {
               {generatePathPreview()}
             </div>
           </div>
-
-          <div className="download-info">
-            <h5>Current download method:</h5>
-            <p>
-              {downloadSettings.useCustomPath 
-                ? `📁 Custom: ${downloadSettings.customPath || '(not set)'}`
-                : '🌐 Browser default download'
-              }
-            </p>
-          </div>
         </div>
       )}
     </>
@@ -543,43 +309,12 @@ function App() {
 
       <div className="container">
         <header className="header">
-          <h1><i className="fas fa-envelope-open-text"></i> Email and attachment to PDF</h1>
+          <h1><i className="fas fa-envelope-open-text"></i> Email to PDF Converter</h1>
         </header>
-
-        {/* <div className="card status-card">
-          <h3><i className="fas fa-heartbeat"></i> Status</h3>
-          <div className="status-info">
-            <span className={`status-indicator ${authStatus === 'authenticated' ? 'online' : authStatus === 'checking' ? 'loading' : 'offline'}`}></span>
-            <span>
-              {authStatus === 'authenticated' 
-                ? `System connect good (Operating time: ${systemStats.uptime || 0} hours)`
-                : 'System connect fail'
-              }
-            </span>
-          </div>
-          <div className="stats-grid">
-            <div className="stat-item">
-              <span className="stat-number">{systemStats.totalFiles || '-'}</span>
-              <span className="stat-label">Total files count</span>
-            </div>
-            <div className="stat-item">
-              <span className="stat-number">{systemStats.totalSize ? formatFileSize(systemStats.totalSize) : '-'}</span>
-              <span className="stat-label">Size</span>
-            </div>
-            <div className="stat-item">
-              <span className="stat-number">{systemStats.convertedEmails || '-'}</span>
-              <span className="stat-label">Converted Email</span>
-            </div>
-            <div className="stat-item">
-              <span className="stat-number">{systemStats.attachmentFiles || '-'}</span>
-              <span className="stat-label">Attachment file</span>
-            </div>
-          </div>
-        </div> */}
 
         <div className="main-content">
           <div className="card">
-            <h3><i className="fas fa-inbox"></i> Email list</h3>
+            <h3><i className="fas fa-inbox"></i> Email List</h3>
             <div className="button-group">
               <button 
                 className="btn" 
@@ -587,96 +322,23 @@ function App() {
                 disabled={loading.emails}
               >
                 {loading.emails ? <span className="loading"></span> : <i className="fas fa-refresh"></i>}
-                Refresh
-              </button>
-              <button 
-                className="btn" 
-                onClick={() => setShowModeSelector(!showModeSelector)}
-              >
-                <i className="fas fa-cog"></i>
-                Change setting {showModeSelector ? '▲' : '▼'}
+                Refresh Emails
               </button>
               <button 
                 className="btn" 
                 onClick={handleToAuthUrl}
                 disabled={loading.auth}
               >
+                {loading.auth ? <span className="loading"></span> : <i className="fas fa-key"></i>}
                 Gmail Auth
               </button>
             </div>
-            {showModeSelector && (
-              <div className="mode-selector">
-                <h4>Change mode</h4>
-                <div className="mode-options">
-                  <label className="mode-option">
-                    <input 
-                      type="radio" 
-                      name="convertMode" 
-                      value="merged" 
-                      checked={convertMode === 'merged'}
-                      onChange={(e) => setConvertMode(e.target.value)}
-                    />
-                    <span>Merge email + PDF attachments (default, no PDF = email only)</span>
-                  </label>
-                  <label className="mode-option">
-                    <input 
-                      type="radio" 
-                      name="convertMode" 
-                      value="email_only" 
-                      checked={convertMode === 'email_only'}
-                      onChange={(e) => setConvertMode(e.target.value)}
-                    />
-                    <span>Email to pdf only</span>
-                  </label>
-                  <label className="mode-option">
-                    <input 
-                      type="radio" 
-                      name="convertMode" 
-                      value="attachments_only" 
-                      checked={convertMode === 'attachments_only'}
-                      onChange={(e) => setConvertMode(e.target.value)}
-                    />
-                    <span>Attachment only</span>
-                  </label>
-                </div>
-
-                {convertMode === 'attachments_only' && (
-                  <div className="attachment-types">
-                    <h5>Attachment Type</h5>
-                    <div className="type-checkboxes">
-                      {['pdf', 'images', 'documents', 'others'].map(type => (
-                        <label key={type} className="type-checkbox">
-                          <input 
-                            type="checkbox" 
-                            value={type}
-                            checked={attachmentTypes.includes(type)}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setAttachmentTypes([...attachmentTypes, type]);
-                              } else {
-                                setAttachmentTypes(attachmentTypes.filter(t => t !== type));
-                              }
-                            }}
-                          />
-                          <span>
-                            {type === 'pdf' && 'PDF'}
-                            {type === 'images' && 'Image'}
-                            {type === 'documents' && 'Document'}
-                            {type === 'others' && 'Other'}
-                          </span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
             
             <div className="email-list">
               {emails.length === 0 ? (
                 <div className="empty-state">
                   <i className="fas fa-envelope fa-3x"></i>
-                  <p>Click refresh to load email messages</p>
+                  <p>Click "Refresh Emails" to load your Gmail messages</p>
                 </div>
               ) : (
                 emails.map((email) => (
@@ -688,6 +350,7 @@ function App() {
                     <div className="email-subject">{email.subject || '(No subject)'}</div>
                     <div className="email-from">From: {email.from}</div>
                     <div className="email-date">{formatDate(email.date)}</div>
+                    <div className="email-snippet">{email.snippet}</div>
                   </div>
                 ))
               )}
@@ -695,7 +358,7 @@ function App() {
           </div>
 
           <div className="card">
-            <h3><i className="fas fa-cogs"></i> Operation panel</h3>
+            <h3><i className="fas fa-cogs"></i> Operations</h3>
             <div className="button-group">
               <button 
                 className="btn" 
@@ -706,28 +369,17 @@ function App() {
                 disabled={loading.mergedFiles}
               >
                 {loading.mergedFiles ? <span className="loading"></span> : <i className="fas fa-scissors"></i>}
-                PDF demerge {showDemergePanel ? '▲' : '▼'}
+                PDF Split Tool {showDemergePanel ? '▲' : '▼'}
               </button>
               {renderDownloadSettings()}
             </div>
-            {/* <button 
-                className="btn btn-danger" 
-                onClick={cleanupFiles}
-                disabled={loading.cleanup}
-                style={{
-                  minWidth: '100%'
-                }}
-              >
-                {loading.cleanup ? <span className="loading"></span> : <i className="fas fa-trash"></i>}
-                Clean cache
-              </button> */}
 
             {selectedEmail && (
               <div className="selected-email-info">
-                <h4>Selected email message</h4>
+                <h4>Selected Email</h4>
                 <div className="email-details">
-                  <div><strong>Topic:</strong> {selectedEmail.subject}</div>
-                  <div><strong>Sender:</strong> {selectedEmail.from}</div>
+                  <div><strong>Subject:</strong> {selectedEmail.subject}</div>
+                  <div><strong>From:</strong> {selectedEmail.from}</div>
                   <div><strong>Date:</strong> {formatDate(selectedEmail.date)}</div>
                   <div><strong>Preview:</strong> {selectedEmail.snippet}</div>
                 </div>
@@ -738,51 +390,21 @@ function App() {
                     disabled={loading.convertSelected}
                   >
                     {loading.convertSelected ? <span className="loading"></span> : <i className="fas fa-file-pdf"></i>}
-                    Convert this email
+                    Convert to PDF
                   </button>
-                  {/* <button 
-                    className="btn" 
-                    onClick={viewAttachments}
-                    disabled={loading.attachments}
-                  >
-                    {loading.attachments ? <span className="loading"></span> : <i className="fas fa-paperclip"></i>}
-                    View attachment
-                  </button> */}
                 </div>
-              </div>
-            )}
-
-            {attachments.length > 0 && (
-              <div className="attachments-section">
-                <h4>Attachment list ({attachments.length} total, {attachments.filter(a => a.isPdf).length} PDF)</h4>
-                {attachments.map(att => (
-                  <div key={att.attachmentId} className="download-item">
-                    <div className="download-info">
-                      <div><strong>{att.filename}</strong></div>
-                      <div className="file-size">{att.mimeType} - {formatFileSize(att.size)}</div>
-                    </div>
-                    {/* <div className="download-actions">
-                      <button 
-                        className="btn" 
-                        onClick={() => downloadAttachment(att.attachmentId, att.filename)}
-                      >
-                        <i className="fas fa-download"></i> Download
-                      </button>
-                    </div> */}
-                  </div>
-                ))}
               </div>
             )}
 
             {showDemergePanel && (
               <div className="demerge-panel">
-                <h4>PDF demerge</h4>
-                <p>Split merged PDF files back to original email content and attachments</p>
+                <h4>PDF Split Tool</h4>
+                <p>Split merged PDF files back into original email and attachments</p>
                 
                 {mergedFiles.length === 0 ? (
                   <div className="empty-state">
                     <i className="fas fa-file-pdf fa-2x"></i>
-                    <p>Merged file not found</p>
+                    <p>No merged PDF files found</p>
                   </div>
                 ) : (
                   <div className="merged-files-list">
@@ -795,19 +417,6 @@ function App() {
                           </div>
                         </div>
                         <div className="file-actions">
-                          <button 
-                            className="btn btn-small" 
-                            onClick={() => {
-                              setSelectedMergedFile(file);
-                              analyzeMergedFile(file.filename);
-                            }}
-                            disabled={loading.analyze}
-                          >
-                            {loading.analyze && selectedMergedFile?.filename === file.filename ? 
-                              <span className="loading"></span> : <i className="fas fa-search"></i>
-                            }
-                            Analyze
-                          </button>
                           <button 
                             className="btn btn-success btn-small" 
                             onClick={() => demergePDF(file.filename)}
@@ -824,10 +433,10 @@ function App() {
                 
                 {selectedMergedFile && (
                   <div className="demerge-settings">
-                    <h5>Demerge setting - {selectedMergedFile.filename}</h5>
+                    <h5>Split Settings - {selectedMergedFile.filename}</h5>
                     <div className="setting-group">
                       <label>
-                        Email page number:
+                        Email pages count:
                         <input 
                           type="number" 
                           min="1" 
@@ -841,7 +450,7 @@ function App() {
                     </div>
                     
                     <div className="attachment-settings">
-                      <label>Attachment information:</label>
+                      <label>Attachment Information:</label>
                       {demergeSettings.attachmentInfo.map((att, index) => (
                         <div key={index} className="attachment-setting">
                           <input 
@@ -859,7 +468,7 @@ function App() {
                           />
                           <input 
                             type="number" 
-                            placeholder="page"
+                            placeholder="Pages"
                             min="1"
                             value={att.pageCount}
                             onChange={(e) => {
@@ -881,7 +490,7 @@ function App() {
                               });
                             }}
                           >
-                            Delete
+                            Remove
                           </button>
                         </div>
                       ))}
@@ -897,41 +506,11 @@ function App() {
                           });
                         }}
                       >
-                        <i className="fas fa-plus"></i> Add attachment
+                        <i className="fas fa-plus"></i> Add Attachment
                       </button>
                     </div>
                   </div>
                 )}
-              </div>
-            )}
-
-            {downloads.length > 0 && (
-              <div className="downloads-section">
-                <h4>Download ({downloads.length} in total)</h4>
-                {downloads.map(file => (
-                  <div key={file.filename} className="download-item">
-                    <div className="download-info">
-                      <div><strong>{file.filename}</strong></div>
-                      <div className="file-size">
-                        {file.type === 'email' ? '📧' : '📎'} {formatFileSize(file.size)} - {formatDate(file.created)}
-                      </div>
-                    </div>
-                    <div className="download-actions">
-                      <button 
-                        className="btn" 
-                        onClick={() => downloadFile(file.filename, file.type)}
-                      >
-                        <i className="fas fa-download"></i> Download
-                      </button>
-                      <button 
-                        className="btn btn-danger" 
-                        onClick={() => deleteFile(file.filename, file.type)}
-                      >
-                        <i className="fas fa-trash"></i> Delete
-                      </button>
-                    </div>
-                  </div>
-                ))}
               </div>
             )}
           </div>

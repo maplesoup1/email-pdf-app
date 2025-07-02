@@ -1,3 +1,7 @@
+const fs = require('fs');
+const path = require('path');
+const GmailAuthService = require('./multi-user-gmail-auth');
+
 class GmailService {
     constructor() {
         this.gmail = null;
@@ -24,6 +28,7 @@ class GmailService {
 
     async getEmailList(maxResults = 10, sessionId, pageToken = null) {
         await this._ensureAuthenticated(sessionId);
+        
         const listResponse = await this.gmail.users.messages.list({
             userId: 'me',
             maxResults: parseInt(maxResults),
@@ -58,11 +63,13 @@ class GmailService {
 
     async getEmailById(messageId, sessionId) {
         await this._ensureAuthenticated(sessionId);
+        
         const messageResponse = await this.gmail.users.messages.get({
             userId: 'me',
             id: messageId,
             format: 'full'
         });
+        
         return this.parseEmailMessage(messageResponse.data);
     }
 
@@ -72,6 +79,7 @@ class GmailService {
         const from = headers.find(h => h.name === 'From')?.value || '';
         const to = headers.find(h => h.name === 'To')?.value || '';
         const date = headers.find(h => h.name === 'Date')?.value || '';
+        
         const findPartRecursively = (part, mimeType) => {
             if (part.mimeType === mimeType && part.body?.data) return part;
             if (part.parts) {
@@ -114,15 +122,19 @@ class GmailService {
 
     async downloadAttachment(messageId, attachmentId, filename, downloadDir, sessionId) {
         await this._ensureAuthenticated(sessionId);
+        
         const attachment = await this.gmail.users.messages.attachments.get({
             userId: 'me',
             messageId,
             id: attachmentId
         });
+
         const data = Buffer.from(attachment.data.data, 'base64');
         const filePath = path.join(downloadDir, filename);
         fs.writeFileSync(filePath, data);
-        console.log(`附件已下载: ${filePath}`);
+        
         return filePath;
     }
 }
+
+module.exports = GmailService;

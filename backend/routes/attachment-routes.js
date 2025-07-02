@@ -1,13 +1,25 @@
 const express = require('express');
 const router = express.Router();
+const GmailService = require('../services/gmail-service');
 const AttachmentService = require('../services/attachment-service');
 const fs = require('fs');
 const path = require('path');
+
+const gmailService = new GmailService();
 const attachmentService = new AttachmentService();
 
 router.get('/:messageId/list', async (req, res) => {
     try {
-        const { messageId } = req.params;     
+        const { messageId } = req.params;
+        const { sessionId } = req.query;
+        
+        if (!sessionId) {
+            return res.status(400).json({ success: false, error: 'SessionId is required' });
+        }
+
+        const email = await gmailService.getEmailById(messageId, sessionId);
+        const attachments = attachmentService.detectAttachments(email.payload);
+        
         res.json({
             success: true,
             data: {
@@ -15,7 +27,7 @@ router.get('/:messageId/list', async (req, res) => {
                 attachments,
                 totalCount: attachments.length,
                 pdfCount: attachments.filter(a => a.isPdf).length,
-                hasPdfAttachment: attachmentService.hasPdfAttachment(attachments),
+                hasPdfAttachment: attachmentService.hasPdfAttachment(attachments)
             }
         });
     } catch (error) {
@@ -29,20 +41,29 @@ router.get('/:messageId/list', async (req, res) => {
 router.post('/:messageId/download/:attachmentId', async (req, res) => {
     try {
         const { messageId, attachmentId } = req.params;
-        const { filename } = req.body;
-        const { sessionId } = req.query;
+        const { filename, sessionId } = req.body;
         
-        if (!filename) {
-            return res.status(400).json({
-                success: false,
-                error: '缺少文件名参数'
-            });
+        if (!sessionId) {
+            return res.status(400).json({ success: false, error: 'SessionId is required' });
         }
         
-        const downloadDir = path.join(__dirname, '../A2/attachments');
+        if (!filename) {
+            return res.status(400).json({ success: false, error: 'Filename is required' });
+        }
+        
+        const downloadDir = path.join(__dirname, '../downloads/attachments');
         if (!fs.existsSync(downloadDir)) {
             fs.mkdirSync(downloadDir, { recursive: true });
         }
+
+        const filePath = await gmailService.downloadAttachment(
+            messageId,
+            attachmentId,
+            filename,
+            downloadDir,
+            sessionId
+        );
+        
         res.json({
             success: true,
             data: {
@@ -50,7 +71,7 @@ router.post('/:messageId/download/:attachmentId', async (req, res) => {
                 attachmentId,
                 filename,
                 filePath: path.basename(filePath),
-                size: fs.statSync(filePath).size,
+                size: fs.statSync(filePath).size
             }
         });
     } catch (error) {
@@ -69,7 +90,7 @@ router.get('/download/:filename', (req, res) => {
         if (!fs.existsSync(filePath)) {
             return res.status(404).json({
                 success: false,
-                error: '附件不存在'
+                error: 'File not found'
             });
         }
         
@@ -93,23 +114,20 @@ router.get('/download/:filename', (req, res) => {
 router.post('/:messageId/download-all', async (req, res) => {
     try {
         const { messageId } = req.params;
-        const { pdfOnly = false } = req.body;
+        const { pdfOnly = false, sessionId } = req.body;
         
-        await gmailService.authenticate();
-        
-        const messageResponse = await gmailService.gmail.users.messages.get({
-            userId: 'me',
-            id: messageId,
-            format: 'full'
-        });
-        
-        const attachments = attachmentService.detectAttachments(messageResponse.data.payload);
+        if (!sessionId) {
+            return res.status(400).json({ success: false, error: 'SessionId is required' });
+        }
+
+        const email = await gmailService.getEmailById(messageId, sessionId);
+        const attachments = attachmentService.detectAttachments(email.payload);
         const filteredAttachments = pdfOnly ? attachments.filter(a => a.isPdf) : attachments;
         
         if (filteredAttachments.length === 0) {
             return res.status(404).json({
                 success: false,
-                error: pdfOnly ? '没有找到PDF附件' : '没有找到附件'
+                error: pdfOnly ? 'No PDF attachments found' : 'No attachments found'
             });
         }
         
@@ -126,7 +144,8 @@ router.post('/:messageId/download-all', async (req, res) => {
                     messageId,
                     attachment.attachmentId,
                     attachment.filename,
-                    downloadDir
+                    downloadDir,
+                    sessionId
                 );
                 
                 downloadedFiles.push({
@@ -136,7 +155,7 @@ router.post('/:messageId/download-all', async (req, res) => {
                     isPdf: attachment.isPdf
                 });
             } catch (error) {
-                console.error(`下载附件失败 ${attachment.filename}:`, error.message);
+                console.error(`Failed to download attachment ${attachment.filename}:`, error.message);
             }
         }
         
@@ -165,7 +184,7 @@ router.delete('/cleanup/:messageId', (req, res) => {
         if (!fs.existsSync(attachmentDir)) {
             return res.json({
                 success: true,
-                message: '没有需要清理的文件'
+                message: 'No files to cleanup'
             });
         }
         

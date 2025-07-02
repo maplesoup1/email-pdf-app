@@ -1,7 +1,19 @@
 const express = require('express');
 const router = express.Router();
 const GmailAuthService = require('../services/multi-user-gmail-auth');
+const GmailService = require('../services/gmail-service');
 
+
+router.get('/start', async (req, res) => {
+  try {
+    const sessionId = GmailAuthService.generateSessionId();
+    const authUrl = GmailAuthService.generateAuthUrl(sessionId);
+
+    res.json({ authUrl, sessionId });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 router.get('/callback', async (req, res) => {
     const { code, state: sessionId } = req.query;
@@ -27,25 +39,12 @@ router.get('/callback', async (req, res) => {
     // If the authentication is successful, it will show a success message and close the window.
   });
 
-router.get('/emails/:sessionId', async (req, res) => {
+  router.get('/emails/:sessionId', async (req, res) => {
     try {
-        const gmail = await GmailAuthService.getGmailClient(req.params.sessionId);
-        const list = await gmail.users.messages.list({ userId: 'me', maxResults: 10 });
-        const results = [];
-        for (const msg of list.data.messages || []) {
-            const detail = await gmail.users.messages.get({ userId: 'me', id: msg.id });
-            const headers = detail.data.payload.headers || [];
-            const getHeader = (name) =>
-                headers.find(h => h.name.toLowerCase() === name.toLowerCase())?.value || '';
-            results.push({
-                subject: getHeader('Subject'),
-                from: getHeader('From'),
-                date: getHeader('Date'),
-                snippet: detail.data.snippet,
-                messageId: detail.data.id
-            });
-        }
-        res.json(results);
+        const gmailService = new GmailService();
+        const { maxResults = 10, pageToken } = req.query;
+        const result = await gmailService.getEmailList(maxResults, req.params.sessionId, pageToken);
+        res.json(result);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
