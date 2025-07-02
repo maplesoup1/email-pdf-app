@@ -12,7 +12,6 @@ if (!fs.existsSync(configDir)) {
     fs.mkdirSync(configDir, { recursive: true });
 }
 
-// 默认设置
 const defaultSettings = {
     useCustomPath: false,
     customPath: '',
@@ -20,7 +19,6 @@ const defaultSettings = {
     folderNaming: 'date'
 };
 
-// 读取设置
 const loadSettings = () => {
     try {
         if (fs.existsSync(SETTINGS_FILE)) {
@@ -44,7 +42,7 @@ const saveSettings = (settings) => {
     }
 };
 
-// 生成下载路径
+// Generate download path based on settings 
 const generateDownloadPath = (settings, emailSubject = '', messageId = '') => {
     if (!settings.useCustomPath || !settings.customPath) {
         return null;
@@ -90,17 +88,12 @@ const validatePath = (inputPath) => {
         if (!path.isAbsolute(inputPath)) {
             return { valid: false, message: 'Please provide absolute path' };
         }
-        
-        // 检查路径格式
+    
         const normalizedPath = path.normalize(inputPath);
-        
-        // 检查是否包含非法字符
         const invalidChars = /[<>"|?*]/;
         if (invalidChars.test(inputPath)) {
             return { valid: false, message: 'Path contains invalid characters' };
         }
-        
-        // 尝试检查父目录是否存在
         const parentDir = path.dirname(normalizedPath);
         if (!fs.existsSync(parentDir)) {
             return { valid: false, message: 'Parent directory does not exist' };
@@ -116,7 +109,6 @@ const validatePath = (inputPath) => {
     }
 };
 
-// 获取下载设置
 router.get('/download-path', (req, res) => {
     try {
         const settings = loadSettings();
@@ -252,7 +244,6 @@ router.post('/validate-path', (req, res) => {
     }
 });
 
-// 获取常用路径建议
 router.get('/suggested-paths', (req, res) => {
     try {
         const homeDir = os.homedir();

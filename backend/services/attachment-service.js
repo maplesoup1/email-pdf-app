@@ -1,12 +1,11 @@
 const path = require('path');
 
 class AttachmentService {
+    // Detects and extracts attachments from the email payload.
     detectAttachments(payload) {
         const attachments = [];
-        
         const extractAttachments = (parts) => {
             if (!parts) return;
-            
             for (const part of parts) {
                 if (part.filename && part.filename.length > 0) {
                     const attachment = {
@@ -24,7 +23,6 @@ class AttachmentService {
                 }
             }
         };
-        
         if (payload.filename && payload.filename.length > 0) {
             attachments.push({
                 filename: payload.filename,

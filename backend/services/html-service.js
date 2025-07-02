@@ -1,5 +1,6 @@
 class HtmlService {
     createEmailHTML(emailData, attachments = []) {
+        //convert email main body to HTML with the format to pdf
         const { subject, from, to, date, body, isHtml } = emailData;
         
         const emailBody = isHtml ? body : `<pre style="white-space: pre-wrap; font-family: Arial, sans-serif;">${body.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>`;

@@ -1,3 +1,4 @@
+//Main Service
 const fs = require('fs');
 const path = require('path');
 const GmailService = require('./gmail-service');
@@ -74,16 +75,11 @@ class EmailProcessor {
     }
 
     async generateMergedPdf(email, attachments, outputPath, downloadDir) {
-        console.log('\n正在处理PDF附件合并...');
-
-        console.log('生成邮件PDF...');
         const htmlContent = this.htmlService.createEmailHTML(email, attachments);
         const emailPdfBuffer = await this.puppeteerService.convertHtmlToPdf(htmlContent, null, true);
-
         const pdfAttachmentPaths = [];
         for (const attachment of attachments) {
             if (attachment.isPdf) {
-                console.log(`下载PDF附件: ${attachment.filename}`);
                 const attachmentPath = await this.gmailService.downloadAttachment(
                     email.messageId,
                     attachment.attachmentId,
@@ -94,29 +90,15 @@ class EmailProcessor {
                 pdfAttachmentPaths.push(attachmentPath);
             }
         }
-
         const mergedPdfBuffer = await this.pdfService.mergePDFs(emailPdfBuffer, pdfAttachmentPaths);
-
         fs.writeFileSync(outputPath, mergedPdfBuffer);
-
         this.pdfService.cleanupTempFiles(pdfAttachmentPaths);
-
-        console.log('\n✅ PDF合并完成!');
-        console.log(`📁 合并文件保存位置: ${outputPath}`);
-        console.log(`📄 文件大小: ${(fs.statSync(outputPath).size / 1024).toFixed(2)} KB`);
-
         return { merged: true };
     }
 
     async generateEmailOnlyPdf(email, attachments, outputPath) {
-        console.log('\n正在转换邮件为PDF...');
         const htmlContent = this.htmlService.createEmailHTML(email, attachments);
         await this.puppeteerService.convertHtmlToPdf(htmlContent, outputPath);
-
-        console.log('\n✅ 邮件转换完成!');
-        console.log(`📁 文件保存位置: ${outputPath}`);
-        console.log(`📄 文件大小: ${(fs.statSync(outputPath).size / 1024).toFixed(2)} KB`);
-
         return { merged: false };
     }
 }

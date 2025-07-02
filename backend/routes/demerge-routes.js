@@ -4,7 +4,7 @@ const PdfService = require('../services/pdf-service');
 const fs = require('fs');
 const path = require('path');
 const { PDFDocument } = require('pdf-lib');
-const { loadSettings, generateDownloadPath, ensureDirectory } = require('./download-settings');
+const { loadSettings, generateDownloadPath, ensureDirectory } = require('./download-routes');
 
 const pdfService = new PdfService();
 

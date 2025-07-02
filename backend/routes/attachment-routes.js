@@ -1,20 +1,13 @@
 const express = require('express');
 const router = express.Router();
-const EmailProviderService = require('../services/email-provider-service');
 const AttachmentService = require('../services/attachment-service');
 const fs = require('fs');
 const path = require('path');
-
-const emailProviderService = new EmailProviderService();
 const attachmentService = new AttachmentService();
 
 router.get('/:messageId/list', async (req, res) => {
     try {
-        const { messageId } = req.params;
-        const { provider } = req.query;
-        const { sessionId } = req.query;
-        const attachments = await emailProviderService.getAttachments(messageId, provider, sessionId);
-        
+        const { messageId } = req.params;     
         res.json({
             success: true,
             data: {
@@ -23,7 +16,6 @@ router.get('/:messageId/list', async (req, res) => {
                 totalCount: attachments.length,
                 pdfCount: attachments.filter(a => a.isPdf).length,
                 hasPdfAttachment: attachmentService.hasPdfAttachment(attachments),
-                provider: provider || emailProviderService.getCurrentProvider()
             }
         });
     } catch (error) {
@@ -38,7 +30,7 @@ router.post('/:messageId/download/:attachmentId', async (req, res) => {
     try {
         const { messageId, attachmentId } = req.params;
         const { filename } = req.body;
-        const { provider, sessionId } = req.query;
+        const { sessionId } = req.query;
         
         if (!filename) {
             return res.status(400).json({
@@ -51,9 +43,6 @@ router.post('/:messageId/download/:attachmentId', async (req, res) => {
         if (!fs.existsSync(downloadDir)) {
             fs.mkdirSync(downloadDir, { recursive: true });
         }
-        
-        const filePath = await emailProviderService.downloadAttachment(messageId, attachmentId, filename, downloadDir, provider, sessionId);
-        
         res.json({
             success: true,
             data: {
@@ -62,7 +51,6 @@ router.post('/:messageId/download/:attachmentId', async (req, res) => {
                 filename,
                 filePath: path.basename(filePath),
                 size: fs.statSync(filePath).size,
-                provider: provider || emailProviderService.getCurrentProvider()
             }
         });
     } catch (error) {

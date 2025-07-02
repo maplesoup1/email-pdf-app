@@ -6,12 +6,9 @@ const fs = require('fs');
 
 const emailRoutes = require('./routes/email-routes');
 const attachmentRoutes = require('./routes/attachment-routes');
-const statusRoutes = require('./routes/status-routes');
 const demergeRoutes = require('./routes/demerge-routes');
-const providerRoutes = require('./routes/provider-routes');
-const outlookAuthRoutes = require('./routes/outlook-auth');
 const authRoutes = require('./routes/auth-routes');
-const { router: downloadSettingsRouter } = require('./routes/download-settings');
+const { router: downloadSettingsRouter } = require('./routes/download-routes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -31,9 +28,6 @@ if (!fs.existsSync(downloadsDir)) {
 if (!fs.existsSync(attachmentsDir)) {
     fs.mkdirSync(attachmentsDir, { recursive: true });
 }
-
-app.use('/api/providers/outlook', outlookAuthRoutes);
-app.use('/api/providers', providerRoutes);
 app.use('/api/emails', emailRoutes);
 app.use('/api/attachments', attachmentRoutes);
 app.use('/api/status', statusRoutes);
@@ -62,24 +56,6 @@ app.get('/api', (req, res) => {
                 'GET /api/attachments/download/:filename': 'Download attachment file',
                 'POST /api/attachments/:messageId/download-all': 'Download all attachments',
                 'DELETE /api/attachments/cleanup/:messageId': 'Clean attachment files'
-            },
-            providers: {
-                'GET /api/providers/list': 'Get available email providers',
-                'POST /api/providers/switch': 'Switch email provider',
-                'GET /api/providers/status': 'Get current provider status',
-                'GET /api/providers/auth/:provider': 'Check provider authentication'
-            },
-            outlook: {
-                'GET /api/providers/outlook/auth': 'Get Outlook authorization URL',
-                'GET /api/providers/outlook/callback': 'Outlook OAuth callback',
-                'GET /api/providers/outlook/token-status': 'Check Outlook token status'
-            },
-            status: {
-                'GET /api/status/health': 'Health check',
-                'GET /api/status/auth': 'Authentication status',
-                'GET /api/status/downloads': 'Download files status',
-                'POST /api/status/cleanup': 'Clean files',
-                'GET /api/status/system': 'System information'
             },
             demerge: {
                 'GET /api/demerge/list': 'Get merged PDF files',
