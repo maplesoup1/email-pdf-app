@@ -30,7 +30,6 @@ if (!fs.existsSync(attachmentsDir)) {
 }
 app.use('/api/emails', emailRoutes);
 app.use('/api/attachments', attachmentRoutes);
-app.use('/api/status', statusRoutes);
 app.use('/api/demerge', demergeRoutes);
 app.use('/api/settings', downloadSettingsRouter);
 app.use('/api/auth', authRoutes);
@@ -88,7 +87,6 @@ app.listen(PORT, () => {
     console.log(`🚀 Server running at http://localhost:3000`);
     console.log(`📚 API Documentation: http://localhost:3000/api`);
     console.log(`🏥 Health Check: http://localhost:3000/api/status/health`);
-    console.log(`🔐 Outlook Auth: http://localhost:3000/api/providers/outlook/auth`);
 });
 
 module.exports = app;

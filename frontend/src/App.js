@@ -6,8 +6,6 @@ const API_BASE = 'http://localhost:3000/api';
 function App() {
   const [emails, setEmails] = useState([]);
   const [selectedEmail, setSelectedEmail] = useState(null);
-  const [systemStats, setSystemStats] = useState({});
-  const [authStatus, setAuthStatus] = useState('checking');
   const [loading, setLoading] = useState({});
   const [load, setLoad] = useState({});
   const [messages, setMessages] = useState([]);
@@ -23,9 +21,6 @@ function App() {
     emailPageCount: 1,
     attachmentInfo: []
   });
-  const [currentProvider, setCurrentProvider] = useState('gmail');
-  const [availableProviders, setAvailableProviders] = useState([]);
-  const [showProviderSelector, setShowProviderSelector] = useState(false);
   
   const [downloadSettings, setDownloadSettings] = useState({
     useCustomPath: false,
@@ -60,18 +55,14 @@ function App() {
       setLoad(prev => ({ ...prev, auth: true }));
   
       const oldSessionId = localStorage.getItem('sessionId');
-  
-      // 验证旧 sessionId 是否还能用（后端验证）
       if (oldSessionId) {
         const valid = await validateSession(oldSessionId);
         if (!valid) {
           localStorage.removeItem('sessionId');
         }
       }
-  
       const response = await fetch(`${API_BASE}/auth/start`);
       const res = await response.json();
-  
       if (res.authUrl && res.sessionId) {
         localStorage.setItem('sessionId', res.sessionId);
         window.open(res.authUrl, '_blank');
@@ -136,18 +127,6 @@ function App() {
     }
   };
 
-  const validatePath = async (path) => {
-    try {
-      const result = await apiCall('/settings/validate-path', {
-        method: 'POST',
-        body: JSON.stringify({ path })
-      });
-      return result;
-    } catch (error) {
-      return { exists: false, writable: false, canCreate: false };
-    }
-  };
-
   const updateDownloadSettings = async (newSettings) => {
     try {
       const result = await apiCall('/settings/download-path', {
@@ -189,115 +168,11 @@ function App() {
   };
 
   useEffect(() => {
-    checkSystemStatus();
-    checkAuth();
-    loadProviders();
     getDownloadSettings();
     getSuggestedPaths();
   }, []);
 
-  const loadProviders = async () => {
-    try {
-      const providers = await apiCall('/providers/list');
-      setAvailableProviders(providers.providers);
-      setCurrentProvider(providers.currentProvider);
-    } catch (error) {
-      console.error('Load email providers failed:', error);
-    }
-  };
 
-  const switchProvider = async (provider) => {
-    setLoadingState('switchProvider', true);
-    try {
-      await apiCall('/providers/switch', {
-        method: 'POST',
-        body: JSON.stringify({ provider })
-      });
-      
-      setCurrentProvider(provider);
-      showMessage(`Switched to ${getProviderDisplayName(provider)}`, 'success');
-      
-      await checkAuth();
-      
-      setEmails([]);
-      setSelectedEmail(null);
-      setAttachments([]);
-    } catch (error) {
-      // Error already shown by apiCall
-    } finally {
-      setLoadingState('switchProvider', false);
-    }
-  };
-
-  const getProviderDisplayName = (provider) => {
-    const displayNames = {
-      'gmail': 'Gmail',
-      'outlook': 'Outlook / Microsoft 365',
-      'yahoo': 'Yahoo Mail',
-      'icloud': 'iCloud Mail'
-    };
-    return displayNames[provider] || provider;
-  };
-
-  const getProviderIcon = (provider) => {
-    const icons = {
-      'gmail': <i className="fab fa-google"></i>,
-      'outlook': <i className="fab fa-microsoft"></i>,
-      'yahoo': <i className="fab fa-yahoo"></i>,
-      'icloud': <i className="fab fa-apple"></i>
-    };
-    return icons[provider] || <i className="fas fa-envelope"></i>;
-  };
-
-  const openOutlookAuth = async () => {
-    try {
-      const authData = await apiCall('/providers/outlook/auth');
-      window.open(authData.authUrl, '_blank', 'width=600,height=700');
-      showMessage('Please complete authentication in the new window', 'info');
-      
-      setTimeout(async () => {
-        await checkAuth();
-        await loadProviders();
-      }, 3000);
-    } catch (error) {
-      showMessage('Failed to open authentication page', 'error');
-    }
-  };
-
-  const checkSystemStatus = async () => {
-    try {
-      const [health, downloadsData] = await Promise.all([
-        apiCall('/status/health'),
-        apiCall('/status/downloads')
-      ]);
-      
-      setSystemStats({
-        uptime: Math.floor(health.uptime / 3600),
-        totalFiles: downloadsData.totalFiles,
-        totalSize: downloadsData.totalSize,
-        convertedEmails: downloadsData.convertedEmailsCount,
-        attachmentFiles: downloadsData.attachmentFilesCount
-      });
-    } catch (error) {
-      console.error('Get system status failed:', error);
-    }
-  };
-
-  const checkAuth = async () => {
-    setLoadingState('auth', true);
-    try {
-      const authData = await apiCall('/status/auth');
-      setAuthStatus(authData.authStatus);
-      
-      if (authData.authStatus !== 'authenticated') {
-        showMessage(authData.errorMessage || 'Authentication not completed', 'error');
-      }
-    } catch (error) {
-      setAuthStatus('error');
-    } finally {
-      setLoadingState('auth', false);
-    }
-  };
 
   const loadEmails = async () => {
     setLoadingState('emails', true);
@@ -328,41 +203,6 @@ function App() {
     setAttachments([]);
   };
 
-  // const convertLatestEmail = async () => {
-  //   setLoadingState('convert', true);
-  //   try {
-  //     const result = await apiCall('/emails/convert-latest', { 
-  //       method: 'POST',
-  //       body: JSON.stringify({ 
-  //         mode: convertMode,
-  //         attachmentTypes: attachmentTypes,
-  //         provider: currentProvider,
-  //         downloadSettings: downloadSettings
-  //       })
-  //     });
-      
-  //     showMessage(`Convert successful! Mode: ${getModeText(result.mode)} (${getProviderDisplayName(currentProvider)})`, 'success');
-      
-  //     if (result.useCustomPath && result.downloadPath) {
-  //       showMessage(`Files saved to: ${result.downloadPath}`, 'info');
-  //     } else {
-  //       result.files.forEach(file => {
-  //         if (file.type === 'email_pdf' || file.type === 'merged_pdf') {
-  //           window.open(`${API_BASE}/emails/download/${file.filename}`);
-  //         } else if (file.type === 'attachment') {
-  //           window.open(`${API_BASE}/attachments/download/${file.filename}`);
-  //         }
-  //       });
-  //     }
-      
-  //     await checkSystemStatus();
-  //   } catch (error) {
-  //     // Error already shown by apiCall
-  //   } finally {
-  //     setLoadingState('convert', false);
-  //   }
-  // };
-
   const convertSelectedEmail = async () => {
     if (!selectedEmail) {
       showMessage('Please select an email first', 'error');
@@ -377,13 +217,10 @@ function App() {
         body: JSON.stringify({ 
           mode: convertMode,
           attachmentTypes: attachmentTypes,
-          provider: currentProvider,
           downloadSettings: downloadSettings,
           sessionId: sessionId
         })
       });
-      
-      showMessage(`Convert successful! Mode: ${getModeText(result.mode)} (${getProviderDisplayName(currentProvider)})`, 'success');
       
       if (result.useCustomPath && result.downloadPath) {
         showMessage(`Files saved to: ${result.downloadPath}`, 'info');
@@ -396,8 +233,6 @@ function App() {
           }
         });
       }
-      
-      await checkSystemStatus();
     } catch (error) {
       // Error already shown by apiCall
     } finally {
@@ -405,40 +240,39 @@ function App() {
     }
   };
 
-  const viewAttachments = async () => {
-    if (!selectedEmail) {
-      showMessage('Please select an email first', 'error');
-      return;
-    }
+  // const viewAttachments = async () => {
+  //   if (!selectedEmail) {
+  //     showMessage('Please select an email first', 'error');
+  //     return;
+  //   }
     
-    setLoadingState('attachments', true);
-    try {
-      const attachmentData = await apiCall(`/attachments/${selectedEmail.messageId}/list?provider=${currentProvider}`);
-      setAttachments(attachmentData.attachments);
+  //   setLoadingState('attachments', true);
+  //   try {
+  //     setAttachments(attachmentData.attachments);
       
-      if (attachmentData.attachments.length === 0) {
-        showMessage('This email has no attachments', 'info');
-      }
-    } catch (error) {
-      setAttachments([]);
-    } finally {
-      setLoadingState('attachments', false);
-    }
-  };
+  //     if (attachmentData.attachments.length === 0) {
+  //       showMessage('This email has no attachments', 'info');
+  //     }
+  //   } catch (error) {
+  //     setAttachments([]);
+  //   } finally {
+  //     setLoadingState('attachments', false);
+  //   }
+  // };
 
-  const downloadAttachment = async (attachmentId, filename) => {
-    try {
-      await apiCall(`/attachments/${selectedEmail.messageId}/download/${attachmentId}?provider=${currentProvider}`, {
-        method: 'POST',
-        body: JSON.stringify({ filename })
-      });
+  // const downloadAttachment = async (attachmentId, filename) => {
+  //   try {
+  //     await apiCall(`/attachments/${selectedEmail.messageId}/download/${attachmentId}?provider=${currentProvider}`, {
+  //       method: 'POST',
+  //       body: JSON.stringify({ filename })
+  //     });
       
-      window.open(`${API_BASE}/attachments/download/${filename}`);
-      showMessage('Attachment download successful', 'success');
-    } catch (error) {
-      // Error already shown by apiCall
-    }
-  };
+  //     window.open(`${API_BASE}/attachments/download/${filename}`);
+  //     showMessage('Attachment download successful', 'success');
+  //   } catch (error) {
+  //     // Error already shown by apiCall
+  //   }
+  // };
 
   const loadDownloads = async () => {
     setLoadingState('downloads', true);
@@ -504,8 +338,6 @@ function App() {
           : `${API_BASE}/attachments/download/${file.filename}`;
         setTimeout(() => window.open(downloadUrl), index * 500);
       });
-      
-      await checkSystemStatus();
       await loadMergedFiles();
     } catch (error) {
       // Error already shown by apiCall
@@ -535,59 +367,9 @@ function App() {
       
       showMessage('File deleted successfully', 'success');
       await loadDownloads();
-      await checkSystemStatus();
     } catch (error) {
-      // Error already shown by apiCall
     }
   };
-
-  const cleanupFiles = async () => {
-    if (!window.confirm('Are you sure you want to clean all files? This operation cannot be undone!')) {
-      return;
-    }
-    
-    setLoadingState('cleanup', true);
-    try {
-      const result = await apiCall('/status/cleanup', {
-        method: 'POST',
-        body: JSON.stringify({ type: 'all' })
-      });
-      
-      showMessage(`Cleanup completed! Deleted ${result.deletedCount} files`, 'success');
-      await checkSystemStatus();
-      await loadDownloads();
-      setSelectedEmail(null);
-      setAttachments([]);
-      setDownloads([]);
-    } catch (error) {
-      // Error already shown by apiCall
-    } finally {
-      setLoadingState('cleanup', false);
-    }
-  };
-
-  const getModeText = (mode) => {
-    const modeMap = {
-      'merged': 'Email + Attachment',
-      'merged_fallback': 'Email + Attachment (No PDF attachment, Email only)',
-      'auto': 'Auto',
-      'email_only': 'Email only',
-      'attachments_only': 'Attachment only'
-    };
-    return modeMap[mode] || mode;
-  };
-
-  // const getAuthStatusText = () => {
-  //   const statusMap = {
-  //     'authenticated': 'Authenticated',
-  //     'not_configured': '❌ Not configured',
-  //     'credentials_only': '⚠️ Need authorization',
-  //     'auth_failed': '❌ Auth failed',
-  //     'checking': '🔄 Checking...',
-  //     'error': '❌ Error'
-  //   };
-  //   return statusMap[authStatus] || 'Unknown status';
-  // };
 
   const renderDownloadSettings = () => (
     <>
@@ -716,14 +498,14 @@ function App() {
                 </div>
               </div>
 
-              {/* <div className="setting-actions">
+              <div className="setting-actions">
                 <button 
                   className="btn btn-success" 
                   onClick={() => updateDownloadSettings(downloadSettings)}
                 >
                   <i className="fas fa-save"></i> Save Settings
                 </button>
-              </div> */}
+              </div>
             </>
           )}
 
@@ -797,7 +579,7 @@ function App() {
 
         <div className="main-content">
           <div className="card">
-            <h3><i className="fas fa-inbox"></i> Email list - {getProviderDisplayName(currentProvider)}</h3>
+            <h3><i className="fas fa-inbox"></i> Email list</h3>
             <div className="button-group">
               <button 
                 className="btn" 
@@ -807,13 +589,6 @@ function App() {
                 {loading.emails ? <span className="loading"></span> : <i className="fas fa-refresh"></i>}
                 Refresh
               </button>
-              {/* <button 
-                className="btn" 
-                onClick={() => setShowProviderSelector(!showProviderSelector)}
-              >
-                <i className="fas fa-exchange-alt"></i>
-                Switch Email {showProviderSelector ? '▲' : '▼'}
-              </button> */}
               <button 
                 className="btn" 
                 onClick={() => setShowModeSelector(!showModeSelector)}
@@ -829,35 +604,6 @@ function App() {
                 Gmail Auth
               </button>
             </div>
-
-            {showProviderSelector && (
-              <div className="provider-selector">
-                <h4>Select Email Service</h4>
-                <div className="provider-options">
-                {availableProviders.map(provider => (
-                <button
-                  key={provider.name}
-                  className={`btn provider-btn ${provider.name === currentProvider ? 'btn-success' : ''}`}
-                  onClick={() => switchProvider(provider.name)}
-                  disabled={loading.switchProvider || provider.name === currentProvider}
-                >
-                  {getProviderIcon(provider.name)} {provider.displayName}
-                  {provider.name === currentProvider && ' ✓'}
-                </button>
-                ))}
-                </div>
-                <div className="provider-info">
-                  <p><strong>Current:</strong> {getProviderDisplayName(currentProvider)}</p>
-                  <p><small>Switching email service requires re-authentication</small></p>
-                  {currentProvider === 'outlook' && authStatus !== 'authenticated' && (
-                    <button className="btn btn-success" onClick={openOutlookAuth}>
-                      <i className="fab fa-microsoft"></i> Authenticate Outlook
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
-
             {showModeSelector && (
               <div className="mode-selector">
                 <h4>Change mode</h4>
@@ -951,21 +697,6 @@ function App() {
           <div className="card">
             <h3><i className="fas fa-cogs"></i> Operation panel</h3>
             <div className="button-group">
-              {/* <button 
-                className="btn" 
-                onClick={checkAuth}
-                disabled={loading.auth}
-              >
-                <i className="fas fa-key"></i> {getAuthStatusText()}
-              </button> */}
-              {/* <button 
-                className="btn" 
-                onClick={loadDownloads}
-                disabled={loading.downloads}
-              >
-                {loading.downloads ? <span className="loading"></span> : <i className="fas fa-download"></i>}
-                Check download
-              </button> */}
               <button 
                 className="btn" 
                 onClick={() => {
@@ -1009,14 +740,14 @@ function App() {
                     {loading.convertSelected ? <span className="loading"></span> : <i className="fas fa-file-pdf"></i>}
                     Convert this email
                   </button>
-                  <button 
+                  {/* <button 
                     className="btn" 
                     onClick={viewAttachments}
                     disabled={loading.attachments}
                   >
                     {loading.attachments ? <span className="loading"></span> : <i className="fas fa-paperclip"></i>}
                     View attachment
-                  </button>
+                  </button> */}
                 </div>
               </div>
             )}
@@ -1030,14 +761,14 @@ function App() {
                       <div><strong>{att.filename}</strong></div>
                       <div className="file-size">{att.mimeType} - {formatFileSize(att.size)}</div>
                     </div>
-                    <div className="download-actions">
+                    {/* <div className="download-actions">
                       <button 
                         className="btn" 
                         onClick={() => downloadAttachment(att.attachmentId, att.filename)}
                       >
                         <i className="fas fa-download"></i> Download
                       </button>
-                    </div>
+                    </div> */}
                   </div>
                 ))}
               </div>
