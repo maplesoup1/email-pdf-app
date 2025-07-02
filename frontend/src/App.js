@@ -328,40 +328,40 @@ function App() {
     setAttachments([]);
   };
 
-  const convertLatestEmail = async () => {
-    setLoadingState('convert', true);
-    try {
-      const result = await apiCall('/emails/convert-latest', { 
-        method: 'POST',
-        body: JSON.stringify({ 
-          mode: convertMode,
-          attachmentTypes: attachmentTypes,
-          provider: currentProvider,
-          downloadSettings: downloadSettings
-        })
-      });
+  // const convertLatestEmail = async () => {
+  //   setLoadingState('convert', true);
+  //   try {
+  //     const result = await apiCall('/emails/convert-latest', { 
+  //       method: 'POST',
+  //       body: JSON.stringify({ 
+  //         mode: convertMode,
+  //         attachmentTypes: attachmentTypes,
+  //         provider: currentProvider,
+  //         downloadSettings: downloadSettings
+  //       })
+  //     });
       
-      showMessage(`Convert successful! Mode: ${getModeText(result.mode)} (${getProviderDisplayName(currentProvider)})`, 'success');
+  //     showMessage(`Convert successful! Mode: ${getModeText(result.mode)} (${getProviderDisplayName(currentProvider)})`, 'success');
       
-      if (result.useCustomPath && result.downloadPath) {
-        showMessage(`Files saved to: ${result.downloadPath}`, 'info');
-      } else {
-        result.files.forEach(file => {
-          if (file.type === 'email_pdf' || file.type === 'merged_pdf') {
-            window.open(`${API_BASE}/emails/download/${file.filename}`);
-          } else if (file.type === 'attachment') {
-            window.open(`${API_BASE}/attachments/download/${file.filename}`);
-          }
-        });
-      }
+  //     if (result.useCustomPath && result.downloadPath) {
+  //       showMessage(`Files saved to: ${result.downloadPath}`, 'info');
+  //     } else {
+  //       result.files.forEach(file => {
+  //         if (file.type === 'email_pdf' || file.type === 'merged_pdf') {
+  //           window.open(`${API_BASE}/emails/download/${file.filename}`);
+  //         } else if (file.type === 'attachment') {
+  //           window.open(`${API_BASE}/attachments/download/${file.filename}`);
+  //         }
+  //       });
+  //     }
       
-      await checkSystemStatus();
-    } catch (error) {
-      // Error already shown by apiCall
-    } finally {
-      setLoadingState('convert', false);
-    }
-  };
+  //     await checkSystemStatus();
+  //   } catch (error) {
+  //     // Error already shown by apiCall
+  //   } finally {
+  //     setLoadingState('convert', false);
+  //   }
+  // };
 
   const convertSelectedEmail = async () => {
     if (!selectedEmail) {
@@ -577,17 +577,17 @@ function App() {
     return modeMap[mode] || mode;
   };
 
-  const getAuthStatusText = () => {
-    const statusMap = {
-      'authenticated': 'Authenticated',
-      'not_configured': '❌ Not configured',
-      'credentials_only': '⚠️ Need authorization',
-      'auth_failed': '❌ Auth failed',
-      'checking': '🔄 Checking...',
-      'error': '❌ Error'
-    };
-    return statusMap[authStatus] || 'Unknown status';
-  };
+  // const getAuthStatusText = () => {
+  //   const statusMap = {
+  //     'authenticated': 'Authenticated',
+  //     'not_configured': '❌ Not configured',
+  //     'credentials_only': '⚠️ Need authorization',
+  //     'auth_failed': '❌ Auth failed',
+  //     'checking': '🔄 Checking...',
+  //     'error': '❌ Error'
+  //   };
+  //   return statusMap[authStatus] || 'Unknown status';
+  // };
 
   const renderDownloadSettings = () => (
     <>
@@ -716,14 +716,14 @@ function App() {
                 </div>
               </div>
 
-              <div className="setting-actions">
+              {/* <div className="setting-actions">
                 <button 
                   className="btn btn-success" 
                   onClick={() => updateDownloadSettings(downloadSettings)}
                 >
                   <i className="fas fa-save"></i> Save Settings
                 </button>
-              </div>
+              </div> */}
             </>
           )}
 
@@ -764,7 +764,7 @@ function App() {
           <h1><i className="fas fa-envelope-open-text"></i> Email and attachment to PDF</h1>
         </header>
 
-        <div className="card status-card">
+        {/* <div className="card status-card">
           <h3><i className="fas fa-heartbeat"></i> Status</h3>
           <div className="status-info">
             <span className={`status-indicator ${authStatus === 'authenticated' ? 'online' : authStatus === 'checking' ? 'loading' : 'offline'}`}></span>
@@ -793,7 +793,7 @@ function App() {
               <span className="stat-label">Attachment file</span>
             </div>
           </div>
-        </div>
+        </div> */}
 
         <div className="main-content">
           <div className="card">
@@ -807,13 +807,13 @@ function App() {
                 {loading.emails ? <span className="loading"></span> : <i className="fas fa-refresh"></i>}
                 Refresh
               </button>
-              <button 
+              {/* <button 
                 className="btn" 
                 onClick={() => setShowProviderSelector(!showProviderSelector)}
               >
                 <i className="fas fa-exchange-alt"></i>
                 Switch Email {showProviderSelector ? '▲' : '▼'}
-              </button>
+              </button> */}
               <button 
                 className="btn" 
                 onClick={() => setShowModeSelector(!showModeSelector)}
@@ -951,21 +951,21 @@ function App() {
           <div className="card">
             <h3><i className="fas fa-cogs"></i> Operation panel</h3>
             <div className="button-group">
-              <button 
+              {/* <button 
                 className="btn" 
                 onClick={checkAuth}
                 disabled={loading.auth}
               >
                 <i className="fas fa-key"></i> {getAuthStatusText()}
-              </button>
-              <button 
+              </button> */}
+              {/* <button 
                 className="btn" 
                 onClick={loadDownloads}
                 disabled={loading.downloads}
               >
                 {loading.downloads ? <span className="loading"></span> : <i className="fas fa-download"></i>}
                 Check download
-              </button>
+              </button> */}
               <button 
                 className="btn" 
                 onClick={() => {
@@ -979,7 +979,7 @@ function App() {
               </button>
               {renderDownloadSettings()}
             </div>
-            <button 
+            {/* <button 
                 className="btn btn-danger" 
                 onClick={cleanupFiles}
                 disabled={loading.cleanup}
@@ -989,7 +989,7 @@ function App() {
               >
                 {loading.cleanup ? <span className="loading"></span> : <i className="fas fa-trash"></i>}
                 Clean cache
-              </button>
+              </button> */}
 
             {selectedEmail && (
               <div className="selected-email-info">

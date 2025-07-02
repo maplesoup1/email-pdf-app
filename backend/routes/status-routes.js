@@ -21,8 +21,12 @@ router.get('/health', (req, res) => {
 
 router.get('/auth', async (req, res) => {
     try {
+        const sessionId = req.query.sessionId;
+        if (!sessionId) {
+            return res.status(400).json({ success: false, error: 'required sessionId' });
+        }
         const credentialsPath = path.join(__dirname, '../credentials.json');
-        const tokenPath = path.join(__dirname, '../token.json');
+        const tokenPath = path.join(__dirname, `../user_tokens/${sessionId}.json`);
         
         const hasCredentials = fs.existsSync(credentialsPath);
         const hasToken = fs.existsSync(tokenPath);
@@ -37,7 +41,7 @@ router.get('/auth', async (req, res) => {
             authStatus = 'credentials_only';
         } else {
             try {
-                await gmailService.authenticate();
+                await gmailService.authenticate(sessionId);
                 authStatus = 'authenticated';
             } catch (error) {
                 errorMessage = `Fail: ${error.message}`;

@@ -19,7 +19,7 @@ const BASIC_FOOTER_CONFIG = {
         text: 'Generated on {datetime}',
         fontSize: 9,
         color: { r: 0.5, g: 0.5, b: 0.5 },
-        margin: 30,
+        margin: 20,
         alignment: 'center'
     }
 };
@@ -49,7 +49,7 @@ router.get('/latest', async (req, res) => {
 
 router.get('/list', async (req, res) => {
     try {
-        const { maxResults = 10, sessionId, provider } = req.query;
+        const { maxResults = 20, sessionId, provider } = req.query;
         const emailData = await emailProviderService.getEmailList(parseInt(maxResults), provider, sessionId);
 
         res.json({
@@ -271,7 +271,6 @@ router.post('/convert/:messageId', async (req, res) => {
     }
 });
 
-// Helper function to add basic footer to PDF
 async function addBasicFooterToPdf(pdfPath) {
     const emailProcessor = new EmailProcessor();
     

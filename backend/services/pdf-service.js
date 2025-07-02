@@ -1,6 +1,7 @@
 const { PDFDocument, rgb, StandardFonts } = require('pdf-lib');
 const fs = require('fs');
 const path = require('path');
+const { gmailService } = require('./gmail-service');
 
 class PdfService {
     
@@ -8,7 +9,8 @@ class PdfService {
         const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
         const pages = pdfDoc.getPages();
         const now = new Date();
-        const currentDateTime = now.toLocaleString();
+        const pad = (n) => String(n).padStart(2, '0');
+        const currentDateTime = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
 
         for (let i = 0; i < pages.length; i++) {
             const page = pages[i];
@@ -21,7 +23,7 @@ class PdfService {
 
             page.drawText(pageText, {
                 x: x,
-                y: 20, // 30 points from bottom
+                y: 20,
                 size: 9,
                 font: font,
                 color: rgb(0.5, 0.5, 0.5), // Gray color
@@ -30,7 +32,7 @@ class PdfService {
     }
 
     async mergePDFs(emailPdfBuffer, attachmentPdfPaths) {
-        console.log('正在合并PDF文件...');
+        console.log('Merging pdf file...');
         
         const mergedPdf = await PDFDocument.create();
         
@@ -40,7 +42,7 @@ class PdfService {
         
         for (const pdfPath of attachmentPdfPaths) {
             if (fs.existsSync(pdfPath)) {
-                console.log(`正在合并: ${path.basename(pdfPath)}`);
+                console.log(`Merging: ${path.basename(pdfPath)}`);
                 const pdfBuffer = fs.readFileSync(pdfPath);
                 const pdf = await PDFDocument.load(pdfBuffer);
                 const pages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
@@ -52,7 +54,7 @@ class PdfService {
         await this.addBasicFooter(mergedPdf);
         
         const mergedPdfBuffer = await mergedPdf.save();
-        console.log('✅ PDF合并完成');
+        console.log('✅ PDF Merged successfully');
         
         return mergedPdfBuffer;
     }
@@ -79,13 +81,10 @@ class PdfService {
         const totalPages = mergedPdf.getPageCount();
         
         const results = [];
-
-        // 确保输出目录存在
         if (!fs.existsSync(outputDir)) {
             fs.mkdirSync(outputDir, { recursive: true });
         }
 
-        // 分离邮件部分
         if (emailPageCount > 0) {
             const emailPdf = await PDFDocument.create();
             const emailPages = await emailPdf.copyPages(mergedPdf, Array.from({ length: emailPageCount }, (_, i) => i));
@@ -107,8 +106,6 @@ class PdfService {
                 pageCount: emailPageCount
             });
         }
-
-        // 分离附件部分
         let currentPageIndex = emailPageCount;
 
         for (const attachment of attachmentInfo) {

@@ -2,11 +2,6 @@ const express = require('express');
 const router = express.Router();
 const GmailAuthService = require('../services/multi-user-gmail-auth');
 
-router.get('/start', (req, res) => {
-    const sessionId = GmailAuthService.generateSessionId();
-    const authUrl = GmailAuthService.generateAuthUrl(sessionId);
-    res.json({ sessionId, authUrl });
-});
 
 router.get('/callback', async (req, res) => {
     const { code, state: sessionId } = req.query;

@@ -10,14 +10,12 @@ class GmailService {
         this.sessionId = null;
     }
 
-    // 新增：设置 sessionId
     setSessionId(sessionId) {
         this.sessionId = sessionId;
         this.auth = null;
         this.gmail = null;
     }
-
-    // 修改：使用多用户认证
+    
     async authenticate(sessionId = null) {
         if (sessionId) {
             this.sessionId = sessionId;

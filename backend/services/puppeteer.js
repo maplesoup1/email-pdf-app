@@ -24,7 +24,6 @@ class PuppeteerService {
                     left: '15mm'
                 }
             });
-            
             if (!returnBuffer && outputPath) {
                 console.log(`PDF已生成: ${outputPath}`);
             }
