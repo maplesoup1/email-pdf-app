@@ -5,54 +5,288 @@ const API_BASE = 'http://localhost:3000/api';
 
 function App() {
   const [emails, setEmails] = useState([]);
-  const [selectedEmail, setSelectedEmail] = useState(null);
+  const [selectedEmails, setSelectedEmails] = useState([]);
   const [loading, setLoading] = useState({});
   const [messages, setMessages] = useState([]);
-  const [mergedFiles, setMergedFiles] = useState([]);
-  const [showDemergePanel, setShowDemergePanel] = useState(false);
-  const [selectedMergedFile, setSelectedMergedFile] = useState(null);
-  const [demergeSettings, setDemergeSettings] = useState({
-    emailPageCount: 1,
-    attachmentInfo: []
+  const [currentProvider, setCurrentProvider] = useState('gmail');
+  const [providers, setProviders] = useState([]);
+  const [processingSettings, setProcessingSettings] = useState({
+    pdfRule: 'mainbody_with_attachment'
   });
-  const [downloadSettings, setDownloadSettings] = useState({
-    useCustomPath: false,
-    customPath: ''
+  const [webhookStatus, setWebhookStatus] = useState(null);
+  const [pdfRules, setPdfRules] = useState([]);
+  const [emailDetails, setEmailDetails] = useState({});
+  const [conversionStatus, setConversionStatus] = useState({});
+  const [autoProcessStatus, setAutoProcessStatus] = useState({
+    enabled: false,
+    isProcessing: false,
+    config: {
+      pdfRule: 'mainbody_with_attachment',
+      maxEmailsPerRun: 5,
+      intervalMinutes: 30
+    },
+    lastRunTime: null
   });
-  const [showDownloadSettings, setShowDownloadSettings] = useState(false);
+  const [autoProcessInterval, setAutoProcessInterval] = useState(null);
 
-  const formatFileSize = (bytes) => {
-    if (bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  const loadProviders = async () => {
+    try {
+      const result = await apiCall('/emails/providers');
+      if (result.success && result.data && result.data.providers) {
+        setProviders(result.data.providers);
+      } else {
+        setProviders(['gmail', 'outlook']);
+      }
+    } catch (error) {
+      console.error('Failed to load providers:', error);
+      setProviders(['gmail', 'outlook']);
+    }
   };
+
+  const fetchWebhookStatus = async () => {
+    const sessionId = localStorage.getItem('sessionId');
+    if (!sessionId) return;
+  
+    try {
+      const res = await apiCall(`/emails/webhook/status?sessionId=${sessionId}`);
+      if (res.success) {
+        setWebhookStatus(res.data);
+      } else {
+        showMessage('Failed to fetch webhook status', 'error');
+      }
+    } catch (err) {
+      console.error('Webhook status error:', err);
+      showMessage('Error fetching webhook status', 'error');
+    }
+  };
+    
+  useEffect(() => {
+    if (localStorage.getItem('sessionId')) {
+      fetchWebhookStatus();
+    }
+  }, [currentProvider]);
+  
 
   const handleToAuthUrl = async () => {
     try {
       setLoadingState('auth', true);
       
-      const response = await fetch(`${API_BASE}/auth/start`);
+      const endpoint = currentProvider === 'outlook' ? '/auth/outlook/start' : '/auth/gmail/start';
+      console.log('Requesting:', `${API_BASE}${endpoint}`); // 添加日志
+      
+      const response = await fetch(`${API_BASE}${endpoint}`);
+      console.log('Response status:', response.status); // 添加日志
+      
       const res = await response.json();
+      console.log('Response data:', res); // 添加日志
       
       if (res.authUrl && res.sessionId) {
         localStorage.setItem('sessionId', res.sessionId);
+        localStorage.setItem('currentProvider', currentProvider);
         window.open(res.authUrl, '_blank');
-        showMessage('Please complete authentication in the new window', 'info');
+        showMessage(`Please complete ${currentProvider} authentication in the new window`, 'info');
       } else {
-        throw new Error('Invalid response from server');
+        throw new Error(`Invalid response: ${JSON.stringify(res)}`);
       }
     } catch (error) {
-      console.error('Failed to get auth URL:', error);
-      showMessage('Failed to get authentication URL', 'error');
+      console.error('Auth URL error details:', error);
+      showMessage(`Failed to get authentication URL: ${error.message}`, 'error');
     } finally {
       setLoadingState('auth', false);
     }
   };
 
+  const handleAutoProcess = async () => {
+    try {
+      setLoadingState('convert', true);
+      const sessionId = localStorage.getItem('sessionId');
+  
+      const response = await fetch(`${API_BASE}/emails/auto-process`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          sessionId: sessionId,
+          provider: currentProvider,
+          maxEmails: 10,
+          pdfRule: processingSettings.pdfRule
+        })
+      });
+  
+      const res = await response.json();
+  
+      if (res.success && res.data.step === 'completed') {
+        showMessage(`Successfully processed ${res.data.processedEmails} out of ${res.data.totalEmails} ${currentProvider} emails`, 'success');
+        await refreshConversionStatus();
+      } else if (res.data?.authUrl) {
+        localStorage.setItem('sessionId', res.data.sessionId);
+        const authWindow = window.open(res.data.authUrl, '_blank');
+  
+        const timer = setInterval(() => {
+          if (authWindow?.closed) {
+            clearInterval(timer);
+            handleAutoProcess();
+          }
+        }, 1000);
+      } else {
+        throw new Error(res.error || 'Processing failed');
+      }
+    } catch (error) {
+      console.error('Auto process failed:', error);
+      showMessage('Auto processing failed: ' + error.message, 'error');
+    } finally {
+      setLoadingState('convert', false);
+    }
+  };
+
+  const loadAutoProcessStatus = () => {
+    const stored = localStorage.getItem('autoProcessConfig');
+    const storedProvider = localStorage.getItem('currentProvider');
+    
+    if (storedProvider) {
+      setCurrentProvider(storedProvider);
+    }
+    
+    if (stored) {
+      const config = JSON.parse(stored);
+      setAutoProcessStatus(prev => ({
+        ...prev,
+        ...config,
+        isProcessing: false
+      }));
+      
+      if (config.enabled) {
+        startAutoProcessTimer(config.intervalMinutes);
+      }
+    }
+  };
+
+  const saveAutoProcessStatus = (status) => {
+    localStorage.setItem('autoProcessConfig', JSON.stringify(status));
+  };
+
+  const startAutoProcessTimer = (intervalMinutes = 30) => {
+    if (autoProcessInterval) {
+      clearInterval(autoProcessInterval);
+    }
+    
+    const interval = setInterval(async () => {
+      const sessionId = localStorage.getItem('sessionId');
+      if (!sessionId) {
+        stopAutoProcess();
+        return;
+      }
+      
+      await runAutoProcess();
+    }, intervalMinutes * 60 * 1000);
+    
+    setAutoProcessInterval(interval);
+  };
+
+  const runAutoProcessWithConfig = async (config = autoProcessStatus) => {
+    if (config.isProcessing) {
+      return;
+    }
+    
+    setAutoProcessStatus(prev => ({ ...prev, isProcessing: true }));
+    
+    try {
+      const sessionId = localStorage.getItem('sessionId');
+      
+      const response = await fetch(`${API_BASE}/emails/auto-process`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          sessionId: sessionId,
+          provider: currentProvider,
+          maxEmails: config.config.maxEmailsPerRun,
+          pdfRule: config.config.pdfRule
+        })
+      });
+
+      const res = await response.json();
+
+      if (res.success && res.data.step === 'completed') {
+        showMessage(`Auto processed ${res.data.processedEmails} out of ${res.data.totalEmails} ${currentProvider} emails`, 'success');
+        
+        const updatedStatus = {
+          ...config,
+          lastRunTime: new Date().toISOString()
+        };
+        setAutoProcessStatus(updatedStatus);
+        saveAutoProcessStatus(updatedStatus);
+        
+        await refreshConversionStatus();
+      } else {
+        showMessage('Auto processing completed with no new emails', 'info');
+      }
+    } catch (error) {
+      console.error('Auto process failed:', error);
+      showMessage('Auto processing failed: ' + error.message, 'error');
+    } finally {
+      setAutoProcessStatus(prev => ({ ...prev, isProcessing: false }));
+    }
+  };
+
+  const runAutoProcess = async () => {
+    await runAutoProcessWithConfig();
+  };
+
+  const startAutoProcess = async () => {
+    const sessionId = localStorage.getItem('sessionId');
+    
+    if (!sessionId) {
+      showMessage('Please authenticate first', 'error');
+      return;
+    }
+
+    const newStatus = {
+      enabled: true,
+      isProcessing: false,
+      config: {
+        ...autoProcessStatus.config,
+        pdfRule: processingSettings.pdfRule
+      },
+      lastRunTime: null
+    };
+    
+    setAutoProcessStatus(newStatus);
+    saveAutoProcessStatus(newStatus);
+    startAutoProcessTimer(newStatus.config.intervalMinutes);
+    
+    await runAutoProcessWithConfig(newStatus);
+    
+    showMessage(`Auto processing started for ${currentProvider}! Will check for new emails every ${newStatus.config.intervalMinutes} minutes.`, 'success');
+  };
+
+  const stopAutoProcess = () => {
+    if (autoProcessInterval) {
+      clearInterval(autoProcessInterval);
+      setAutoProcessInterval(null);
+    }
+    
+    const newStatus = {
+      ...autoProcessStatus,
+      enabled: false,
+      isProcessing: false
+    };
+    
+    setAutoProcessStatus(newStatus);
+    saveAutoProcessStatus(newStatus);
+    
+    showMessage('Auto processing stopped', 'info');
+  };
+
   const formatDate = (dateString) => {
     return new Date(dateString).toLocaleString('en-US');
+  };
+
+  const formatLastRunTime = (isoString) => {
+    if (!isoString) return 'Never';
+    return new Date(isoString).toLocaleString('en-US');
   };
 
   const showMessage = (message, type = 'info') => {
@@ -86,45 +320,192 @@ function App() {
     }
   };
 
-  const updateDownloadSettings = async (newSettings) => {
+  const loadPdfRules = async () => {
     try {
-      const result = await apiCall('/settings', {
-        method: 'POST',
-        body: JSON.stringify(newSettings)
-      });
-      
-      if (result.success) {
-        setDownloadSettings(result.data);
-        showMessage('Download settings saved successfully', 'success');
+      const result = await apiCall('/emails/pdf-rules');
+      if (result.success && result.data && result.data.rules) {
+        setPdfRules(result.data.rules);
       } else {
-        throw new Error(result.error || 'Failed to save settings');
+        setPdfRules(['mainbody_with_attachment', 'mainbody_separate_attachment', 'attachment_only']);
       }
     } catch (error) {
-      showMessage(`Error saving settings: ${error.message}`, 'error');
+      console.error('Failed to load PDF rules:', error);
+      setPdfRules(['mainbody_with_attachment', 'mainbody_separate_attachment', 'attachment_only']);
+      showMessage('Using default PDF processing rules', 'info');
     }
   };
 
-  const getDownloadSettings = async () => {
+  const getPdfRuleLabel = (rule) => {
+    const labels = {
+      'mainbody_with_attachment': 'Merge email + attachments',
+      'mainbody_separate_attachment': 'Separate email & attachments', 
+      'attachment_only': 'Attachments only'
+    };
+    return labels[rule] || rule;
+  };
+
+  const getPdfRuleDescription = (rule) => {
+    const descriptions = {
+      'mainbody_with_attachment': 'Combine email body and PDF attachments into one file',
+      'mainbody_separate_attachment': 'Create separate PDFs for email and each attachment',
+      'attachment_only': 'Process only PDF attachments, skip email body'
+    };
+    return descriptions[rule] || '';
+  };
+
+  const loadEmailDetails = async () => {
+    const sessionId = localStorage.getItem('sessionId');
+    if (!sessionId || emails.length === 0) return;
+
+    setLoadingState('emailDetails', true);
     try {
-      const result = await apiCall('/settings');
-      if (result.success) {
-        setDownloadSettings(result.data);
+      const details = {};
+      const status = {};
+      
+      for (const email of emails) {
+        try {
+          const detailResponse = await apiCall(`/emails/${email.messageId}?sessionId=${sessionId}&provider=${currentProvider}`);
+          if (detailResponse.success) {
+            details[email.messageId] = detailResponse.data;
+          }
+
+          try {
+            const statusResponse = await apiCall(`/emails/${email.messageId}/processing-status?sessionId=${sessionId}`);
+            if (statusResponse.success) {
+              status[email.messageId] = statusResponse.data;
+            } else {
+              status[email.messageId] = { status: 'not_processed' };
+            }
+          } catch (statusError) {
+            console.warn(`Failed to get status for ${email.messageId}:`, statusError);
+            status[email.messageId] = { status: 'not_processed' };
+          }
+        } catch (error) {
+          console.error(`Failed to load details for email ${email.messageId}:`, error);
+          details[email.messageId] = { attachments: [], hasPdfAttachment: false };
+          status[email.messageId] = { status: 'error' };
+        }
       }
+      
+      setEmailDetails(details);
+      setConversionStatus(status);
     } catch (error) {
-      console.error('Failed to get download settings:', error);
+      console.error('Failed to load email details:', error);
+    } finally {
+      setLoadingState('emailDetails', false);
     }
   };
 
-  const generatePathPreview = () => {
-    if (!downloadSettings.useCustomPath || !downloadSettings.customPath) {
-      return 'Use server default download location';
+  const refreshConversionStatus = async () => {
+    const sessionId = localStorage.getItem('sessionId');
+    if (!sessionId || emails.length === 0) return;
+
+    try {
+      const status = {};
+      
+      for (const email of emails) {
+        try {
+          const statusResponse = await apiCall(`/emails/${email.messageId}/processing-status?sessionId=${sessionId}`);
+          if (statusResponse.success) {
+            status[email.messageId] = statusResponse.data;
+          } else {
+            status[email.messageId] = { status: 'not_processed' };
+          }
+        } catch (statusError) {
+          console.warn(`Failed to refresh status for ${email.messageId}:`, statusError);
+          status[email.messageId] = conversionStatus[email.messageId] || { status: 'not_processed' };
+        }
+      }
+      
+      setConversionStatus(status);
+    } catch (error) {
+      console.error('Failed to refresh conversion status:', error);
     }
-    return downloadSettings.customPath;
+  };
+
+  const convertSelectedEmails = async () => {
+    if (!selectedEmails || selectedEmails.length === 0) {
+      showMessage('Please select at least one email.', 'error');
+      return;
+    }
+  
+    setLoadingState('convertSelected', true);
+    try {
+      const sessionId = localStorage.getItem('sessionId');
+      if (!sessionId) {
+        throw new Error('Missing session ID');
+      }
+      const updatedStatus = { ...conversionStatus };
+      selectedEmails.forEach(email => {
+        updatedStatus[email.messageId] = { status: 'processing' };
+      });
+      setConversionStatus(updatedStatus);
+  
+      const result = await apiCall('/emails/convert-multiple', {
+        method: 'POST',
+        body: JSON.stringify({
+          sessionId,
+          provider: currentProvider,
+          messageIds: selectedEmails.map(e => e.messageId),
+          pdfRule: processingSettings.pdfRule
+        })
+      });
+  
+      if (result.success) {
+        showMessage(`Converted ${result.data.length} ${currentProvider} email(s) successfully using ${getPdfRuleLabel(processingSettings.pdfRule)}.`, 'success');
+        
+        await refreshConversionStatus();
+
+        result.data.forEach((emailRes) => {
+          if (emailRes.pdfUrls && emailRes.pdfUrls.length > 0) {
+            showMessage(`${emailRes.subject} → ${emailRes.pdfUrls.length} PDF(s) created`, 'info');
+          }
+        });
+      } else {
+        throw new Error(result.error || 'Conversion failed');
+      }
+    } catch (error) {
+      console.error('Bulk conversion error:', error);
+      showMessage(`Conversion failed: ${error.message}`, 'error');
+      
+      const errorStatus = { ...conversionStatus };
+      selectedEmails.forEach(email => {
+        errorStatus[email.messageId] = { status: 'error' };
+      });
+      setConversionStatus(errorStatus);
+    } finally {
+      setLoadingState('convertSelected', false);
+    }
   };
 
   useEffect(() => {
-    getDownloadSettings();
+    loadProviders();
+    loadPdfRules();
+    autoLoadEmails();
+    loadAutoProcessStatus();
   }, []);
+
+  useEffect(() => {
+    if (emails.length > 0) {
+      loadEmailDetails();
+    }
+  }, [emails, currentProvider]);
+
+  useEffect(() => {
+    return () => {
+      if (autoProcessInterval) {
+        clearInterval(autoProcessInterval);
+      }
+    };
+  }, [autoProcessInterval]);
+  
+
+  const autoLoadEmails = async () => {
+    const sessionId = localStorage.getItem('sessionId');
+    if (sessionId) {
+      await loadEmails();
+    }
+  };
 
   const loadEmails = async () => {
     setLoadingState('emails', true);
@@ -137,164 +518,76 @@ function App() {
     }
   
     try {
-      const response = await apiCall(`/emails/list?sessionId=${sessionId}&maxResults=20`);
+      const response = await apiCall(`/emails/list?sessionId=${sessionId}&provider=${currentProvider}&maxResults=20`);
       if (response.success) {
         setEmails(response.data.emails);
-        showMessage(`Successfully loaded ${response.data.emails.length} emails`, 'success');
+        showMessage(`Auto-loaded ${response.data.emails.length} ${currentProvider} emails`, 'success');
       } else {
         throw new Error(response.error || 'Failed to load emails');
       }
     } catch (error) {
       console.error('Failed to load emails:', error);
       setEmails([]);
-      showMessage('Failed to load emails', 'error');
     } finally {
       setLoadingState('emails', false);
     }
   };
 
-  const selectEmail = (email) => {
-    setSelectedEmail(email);
-  };
-
-  const convertSelectedEmail = async () => {
-    if (!selectedEmail) {
-      showMessage('Please select an email first', 'error');
-      return;
-    }
-    
-    setLoadingState('convertSelected', true);
-    try {
-      const sessionId = localStorage.getItem('sessionId');
-      const result = await apiCall(`/emails/convert/${selectedEmail.messageId}`, { 
-        method: 'POST',
-        body: JSON.stringify({ 
-          sessionId: sessionId,
-          outputDir: downloadSettings.useCustomPath ? downloadSettings.customPath : undefined
-        })
-      });
-      
-      if (result.success) {
-        showMessage('Email converted successfully!', 'success');
-        if (result.data.pdfPath) {
-          showMessage(`PDF saved as: ${result.data.fileName}`, 'info');
-        }
+  const toggleEmailSelection = (email) => {
+    setSelectedEmails(prev => {
+      const exists = prev.find(e => e.messageId === email.messageId);
+      if (exists) {
+        return prev.filter(e => e.messageId !== email.messageId);
       } else {
-        throw new Error(result.error || 'Conversion failed');
+        return [...prev, email];
       }
-    } catch (error) {
-      showMessage(`Conversion failed: ${error.message}`, 'error');
-    } finally {
-      setLoadingState('convertSelected', false);
-    }
+    });
   };
 
-  const loadMergedFiles = async () => {
-    setLoadingState('mergedFiles', true);
-    try {
-      const result = await apiCall('/demerge/list');
-      if (result.success) {
-        setMergedFiles(result.data);
-      } else {
-        setMergedFiles([]);
-      }
-    } catch (error) {
-      setMergedFiles([]);
-    } finally {
-      setLoadingState('mergedFiles', false);
-    }
+  const getPdfAttachmentCount = (messageId) => {
+    const details = emailDetails[messageId];
+    if (!details || !details.attachments) return 0;
+    return details.attachments.filter(att => att.mimeType === 'application/pdf').length;
   };
 
-  const demergePDF = async (filename) => {
-    setLoadingState('demerge', true);
-    try {
-      const result = await apiCall(`/demerge/split/${filename}`, {
-        method: 'POST',
-        body: JSON.stringify(demergeSettings)
-      });
-      
-      if (result.success) {
-        showMessage(`Split successful! Generated ${result.data.separatedFiles.length} files`, 'success');
-        await loadMergedFiles();
-      } else {
-        throw new Error(result.error || 'Split failed');
-      }
-    } catch (error) {
-      showMessage(`Split failed: ${error.message}`, 'error');
-    } finally {
-      setLoadingState('demerge', false);
+  const getConversionStatusDisplay = (messageId, rule) => {
+    const status = conversionStatus[messageId];
+    if (!status || !status.ruleStatus) {
+      return { text: 'Not Processed', className: 'status-not-processed' };
     }
+  
+    const ruleStatus = status.ruleStatus[rule];
+    if (!ruleStatus) {
+      return { text: 'Not Processed', className: 'status-not-processed' };
+    }
+  
+    if (ruleStatus.processing) {
+      return { text: 'Processing...', className: 'status-processing' };
+    }
+  
+    if (ruleStatus.processed) {
+      const pdfCount = ruleStatus.filePaths ? ruleStatus.filePaths.length : 0;
+      return { text: `Converted (${pdfCount})`, className: 'status-completed' };
+    }
+  
+    if (ruleStatus.failed) {
+      return { text: 'Error', className: 'status-error' };
+    }
+  
+    return { text: 'Not Processed', className: 'status-not-processed' };
   };
 
-  const renderDownloadSettings = () => (
-    <>
-      <button 
-        className="btn" 
-        onClick={() => setShowDownloadSettings(!showDownloadSettings)}
-      >
-        <i className="fas fa-folder"></i>
-        Download Settings {showDownloadSettings ? '▲' : '▼'}
-      </button>
-
-      {showDownloadSettings && (
-        <div className="download-settings-panel">
-          <h4>Download Path Settings</h4>
-          
-          <div className="setting-group">
-            <label className="setting-option">
-              <input 
-                type="checkbox" 
-                checked={downloadSettings.useCustomPath}
-                onChange={(e) => {
-                  setDownloadSettings({
-                    ...downloadSettings,
-                    useCustomPath: e.target.checked
-                  });
-                }}
-              />
-              <span>Use custom download path</span>
-            </label>
-          </div>
-
-          {downloadSettings.useCustomPath && (
-            <>
-              <div className="setting-group">
-                <label>
-                  Download path:
-                  <input 
-                    type="text" 
-                    value={downloadSettings.customPath}
-                    onChange={(e) => setDownloadSettings({
-                      ...downloadSettings,
-                      customPath: e.target.value
-                    })}
-                    placeholder="Enter absolute path (e.g., /Users/username/Downloads)"
-                    className="path-input"
-                  />
-                </label>
-              </div>
-
-              <div className="setting-actions">
-                <button 
-                  className="btn btn-success" 
-                  onClick={() => updateDownloadSettings(downloadSettings)}
-                >
-                  <i className="fas fa-save"></i> Save Settings
-                </button>
-              </div>
-            </>
-          )}
-
-          <div className="settings-preview">
-            <h6>Preview save location:</h6>
-            <div className="preview-path">
-              {generatePathPreview()}
-            </div>
-          </div>
-        </div>
-      )}
-    </>
-  );
+  const handleProviderChange = (newProvider) => {
+    if (newProvider !== currentProvider) {
+      setCurrentProvider(newProvider);
+      localStorage.setItem('currentProvider', newProvider);
+      setEmails([]);
+      setSelectedEmails([]);
+      setEmailDetails({});
+      setConversionStatus({});
+      showMessage(`Switched to ${newProvider}. Please authenticate to load emails.`, 'info');
+    }
+  };
 
   return (
     <div className="app">
@@ -309,13 +602,39 @@ function App() {
 
       <div className="container">
         <header className="header">
-          <h1><i className="fas fa-envelope-open-text"></i> Email to PDF Converter</h1>
+          <h1><i className="fas fa-envelope-open-text"></i> Multi-Provider Email to PDF Converter</h1>
         </header>
 
         <div className="main-content">
           <div className="card">
-            <h3><i className="fas fa-inbox"></i> Email List</h3>
+            <h3><i className="fas fa-link"></i> Email Provider</h3>
             <div className="button-group">
+              {providers.map(provider => (
+                <button
+                  key={provider}
+                  className={`btn ${currentProvider === provider ? 'btn-primary' : ''}`}
+                  onClick={() => handleProviderChange(provider)}
+                  disabled={currentProvider === provider}
+                >
+                  <i className={`fas fa-${provider === 'gmail' ? 'envelope' : 'mail-bulk'}`}></i>
+                  {provider === 'gmail' ? 'Gmail' : 'Outlook'}
+                </button>
+              ))}
+            </div>
+            <p>Current provider: <strong>{currentProvider}</strong></p>
+          </div>
+
+          <div className="card">
+            <h3><i className="fas fa-user-check"></i> Authentication & Quick Actions</h3>
+            <div className="button-group">
+              <button 
+                className="btn" 
+                onClick={handleToAuthUrl}
+                disabled={loading.auth}
+              >
+                {loading.auth ? <span className="loading"></span> : <i className="fas fa-key"></i>}
+                Authenticate {currentProvider}
+              </button>
               <button 
                 className="btn" 
                 onClick={loadEmails}
@@ -325,194 +644,327 @@ function App() {
                 Refresh Emails
               </button>
               <button 
-                className="btn" 
-                onClick={handleToAuthUrl}
-                disabled={loading.auth}
+                className="btn btn-primary" 
+                onClick={handleAutoProcess}
+                disabled={loading.convert}
               >
-                {loading.auth ? <span className="loading"></span> : <i className="fas fa-key"></i>}
-                Gmail Auth
+                {loading.convert ? <span className="loading"></span> : <i className="fas fa-magic"></i>}
+                Process (5 emails)
               </button>
-            </div>
-            
-            <div className="email-list">
-              {emails.length === 0 ? (
-                <div className="empty-state">
-                  <i className="fas fa-envelope fa-3x"></i>
-                  <p>Click "Refresh Emails" to load your Gmail messages</p>
-                </div>
-              ) : (
-                emails.map((email) => (
-                  <div 
-                    key={email.messageId} 
-                    className={`email-item ${selectedEmail?.messageId === email.messageId ? 'selected' : ''}`}
-                    onClick={() => selectEmail(email)}
-                  >
-                    <div className="email-subject">{email.subject || '(No subject)'}</div>
-                    <div className="email-from">From: {email.from}</div>
-                    <div className="email-date">{formatDate(email.date)}</div>
-                    <div className="email-snippet">{email.snippet}</div>
-                  </div>
-                ))
-              )}
+              <button 
+                className={`btn ${autoProcessStatus.enabled ? 'btn-danger' : 'btn-success'}`}
+                onClick={autoProcessStatus.enabled ? stopAutoProcess : startAutoProcess}
+                disabled={autoProcessStatus.isProcessing}
+                title={autoProcessStatus.enabled ? 'Stop automatic processing' : 'Start automatic processing'}
+              >
+                {autoProcessStatus.isProcessing ? (
+                  <span className="loading"></span>
+                ) : (
+                  <i className={`fas fa-${autoProcessStatus.enabled ? 'stop' : 'play'}`}></i>
+                )}
+                {autoProcessStatus.enabled ? 'Stop Auto Process' : 'Start Auto Process'}
+                {autoProcessStatus.isProcessing && (
+                  <span className="processing-indicator"> (Running...)</span>
+                )}
+              </button>
             </div>
           </div>
 
           <div className="card">
-            <h3><i className="fas fa-cogs"></i> Operations</h3>
-            <div className="button-group">
-              <button 
-                className="btn" 
-                onClick={() => {
-                  setShowDemergePanel(!showDemergePanel);
-                  if (!showDemergePanel) loadMergedFiles();
-                }}
-                disabled={loading.mergedFiles}
-              >
-                {loading.mergedFiles ? <span className="loading"></span> : <i className="fas fa-scissors"></i>}
-                PDF Split Tool {showDemergePanel ? '▲' : '▼'}
-              </button>
-              {renderDownloadSettings()}
-            </div>
-
-            {selectedEmail && (
-              <div className="selected-email-info">
-                <h4>Selected Email</h4>
-                <div className="email-details">
-                  <div><strong>Subject:</strong> {selectedEmail.subject}</div>
-                  <div><strong>From:</strong> {selectedEmail.from}</div>
-                  <div><strong>Date:</strong> {formatDate(selectedEmail.date)}</div>
-                  <div><strong>Preview:</strong> {selectedEmail.snippet}</div>
-                </div>
-                <div className="button-group">
-                  <button 
-                    className="btn btn-success" 
-                    onClick={convertSelectedEmail}
-                    disabled={loading.convertSelected}
-                  >
-                    {loading.convertSelected ? <span className="loading"></span> : <i className="fas fa-file-pdf"></i>}
-                    Convert to PDF
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {showDemergePanel && (
-              <div className="demerge-panel">
-                <h4>PDF Split Tool</h4>
-                <p>Split merged PDF files back into original email and attachments</p>
-                
-                {mergedFiles.length === 0 ? (
-                  <div className="empty-state">
-                    <i className="fas fa-file-pdf fa-2x"></i>
-                    <p>No merged PDF files found</p>
-                  </div>
+            <h3><i className="fas fa-cogs"></i> PDF Processing Settings</h3>
+            <div className="processing-settings-panel">
+              <div className="setting-group">
+                <label className="setting-label">Choose Processing Rule:</label>
+                {pdfRules.length === 0 ? (
+                  <div className="loading-rules">Loading processing rules...</div>
                 ) : (
-                  <div className="merged-files-list">
-                    {mergedFiles.map(file => (
-                      <div key={file.filename} className="merged-file-item">
-                        <div className="file-info">
-                          <div><strong>{file.filename}</strong></div>
-                          <div className="file-size">
-                            {formatFileSize(file.size)} - {formatDate(file.created)}
+                  <div className="processing-options">
+                    {pdfRules.map(rule => (
+                      <div key={rule} className="processing-option">
+                        <label className="radio-option">
+                          <input 
+                            type="radio"
+                            name="pdfRule"
+                            value={rule}
+                            checked={processingSettings.pdfRule === rule}
+                            onChange={(e) => {
+                              setProcessingSettings({
+                                ...processingSettings,
+                                pdfRule: e.target.value
+                              });
+                              showMessage(`Processing rule changed to: ${getPdfRuleLabel(e.target.value)}`, 'info');
+                              
+                              if (autoProcessStatus.enabled) {
+                                const updatedStatus = {
+                                  ...autoProcessStatus,
+                                  config: {
+                                    ...autoProcessStatus.config,
+                                    pdfRule: e.target.value
+                                  }
+                                };
+                                setAutoProcessStatus(updatedStatus);
+                                saveAutoProcessStatus(updatedStatus);
+                                runAutoProcessWithConfig(updatedStatus);
+                              }
+                            }}
+                          />
+                          <span className="radio-custom"></span>
+                          <div className="option-content">
+                            <div className="option-title">{getPdfRuleLabel(rule)}</div>
+                            <div className="option-description">{getPdfRuleDescription(rule)}</div>
                           </div>
-                        </div>
-                        <div className="file-actions">
-                          <button 
-                            className="btn btn-success btn-small" 
-                            onClick={() => demergePDF(file.filename)}
-                            disabled={loading.demerge}
-                          >
-                            {loading.demerge ? <span className="loading"></span> : <i className="fas fa-scissors"></i>}
-                            Split
-                          </button>
-                        </div>
+                        </label>
                       </div>
                     ))}
                   </div>
                 )}
-                
-                {selectedMergedFile && (
-                  <div className="demerge-settings">
-                    <h5>Split Settings - {selectedMergedFile.filename}</h5>
-                    <div className="setting-group">
-                      <label>
-                        Email pages count:
-                        <input 
-                          type="number" 
-                          min="1" 
-                          value={demergeSettings.emailPageCount}
-                          onChange={(e) => setDemergeSettings({
-                            ...demergeSettings,
-                            emailPageCount: parseInt(e.target.value) || 1
-                          })}
-                        />
-                      </label>
-                    </div>
-                    
-                    <div className="attachment-settings">
-                      <label>Attachment Information:</label>
-                      {demergeSettings.attachmentInfo.map((att, index) => (
-                        <div key={index} className="attachment-setting">
-                          <input 
-                            type="text" 
-                            placeholder="Attachment name"
-                            value={att.originalName}
-                            onChange={(e) => {
-                              const newAttachments = [...demergeSettings.attachmentInfo];
-                              newAttachments[index].originalName = e.target.value;
-                              setDemergeSettings({
-                                ...demergeSettings,
-                                attachmentInfo: newAttachments
-                              });
-                            }}
-                          />
-                          <input 
-                            type="number" 
-                            placeholder="Pages"
-                            min="1"
-                            value={att.pageCount}
-                            onChange={(e) => {
-                              const newAttachments = [...demergeSettings.attachmentInfo];
-                              newAttachments[index].pageCount = parseInt(e.target.value) || 1;
-                              setDemergeSettings({
-                                ...demergeSettings,
-                                attachmentInfo: newAttachments
-                              });
-                            }}
-                          />
-                          <button 
-                            className="btn btn-danger btn-small"
-                            onClick={() => {
-                              const newAttachments = demergeSettings.attachmentInfo.filter((_, i) => i !== index);
-                              setDemergeSettings({
-                                ...demergeSettings,
-                                attachmentInfo: newAttachments
-                              });
-                            }}
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      ))}
-                      <button 
-                        className="btn btn-small"
-                        onClick={() => {
-                          setDemergeSettings({
-                            ...demergeSettings,
-                            attachmentInfo: [
-                              ...demergeSettings.attachmentInfo,
-                              { originalName: 'attachment.pdf', pageCount: 1 }
-                            ]
-                          });
-                        }}
-                      >
-                        <i className="fas fa-plus"></i> Add Attachment
-                      </button>
-                    </div>
+              </div>
+
+              <div className="settings-preview">
+                <div className="preview-item">
+                  <strong>Current Processing Mode:</strong> {getPdfRuleLabel(processingSettings.pdfRule)}
+                </div>
+                <div className="preview-description">
+                  {getPdfRuleDescription(processingSettings.pdfRule)}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="card">
+            <h3><i className="fas fa-robot"></i> Auto Processing Status for {currentProvider}</h3>
+            <div className="auto-process-status">
+              <div className="status-row">
+                <span className="status-label">Status:</span>
+                <span className={`status-value ${autoProcessStatus.enabled ? 'enabled' : 'disabled'}`}>
+                  <i className={`fas fa-circle ${autoProcessStatus.enabled ? 'text-success' : 'text-muted'}`}></i>
+                  {autoProcessStatus.enabled ? 'Enabled' : 'Disabled'}
+                  {autoProcessStatus.isProcessing && (
+                    <span className="processing-text"> - Processing emails...</span>
+                  )}
+                </span>
+              </div>
+              
+              {autoProcessStatus.enabled && (
+                <>
+                  <div className="status-row">
+                    <span className="status-label">Processing Rule:</span>
+                    <span className="status-value">{getPdfRuleLabel(autoProcessStatus.config.pdfRule)}</span>
                   </div>
+                  <div className="status-row">
+                    <span className="status-label">Check Interval:</span>
+                    <span className="status-value">{autoProcessStatus.config.intervalMinutes} minutes</span>
+                  </div>
+                  <div className="status-row">
+                    <span className="status-label">Max Emails per Run:</span>
+                    <span className="status-value">{autoProcessStatus.config.maxEmailsPerRun}</span>
+                  </div>
+                  <div className="status-row">
+                    <span className="status-label">Last Run:</span>
+                    <span className="status-value">{formatLastRunTime(autoProcessStatus.lastRunTime)}</span>
+                  </div>
+                </>
+              )}
+              
+              <div className="auto-process-info">
+                <i className="fas fa-info-circle"></i>
+                <span>
+                  {autoProcessStatus.enabled 
+                    ? `Auto processing will check for new ${currentProvider} emails every ${autoProcessStatus.config.intervalMinutes} minutes and convert them automatically.`
+                    : `Start auto processing to automatically convert new ${currentProvider} emails as they arrive.`
+                  }
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* <div className="card">
+  <h3><i className="fas fa-bolt"></i> Webhook Subscription Status</h3>
+  {webhookStatus ? (
+    <div className="webhook-status">
+      <div className="status-row">
+        <span className="status-label">Is Active:</span>
+        <span className="status-value">
+          <i className={`fas fa-circle ${webhookStatus.isActive ? 'text-success' : 'text-muted'}`}></i>
+          {webhookStatus.isActive ? 'Active' : 'Inactive'}
+        </span>
+      </div>
+      <div className="status-row">
+        <span className="status-label">Subscription ID:</span>
+        <span className="status-value">{webhookStatus.subscriptionId || 'N/A'}</span>
+      </div>
+      <div className="status-row">
+        <span className="status-label">Webhook URL:</span>
+        <span className="status-value small-font">{webhookStatus.webhookUrl || 'N/A'}</span>
+      </div>
+      <div className="status-row">
+        <span className="status-label">Expiration:</span>
+        <span className="status-value">{webhookStatus.expirationDateTime ? formatDate(webhookStatus.expirationDateTime) : 'N/A'}</span>
+      </div>
+      <div className="status-row">
+        <span className="status-label">PDF Rule:</span>
+        <span className="status-value">{getPdfRuleLabel(webhookStatus.pdfRule)}</span>
+      </div>
+      <div className="status-row">
+        <span className="status-label">Output Directory:</span>
+        <span className="status-value">{webhookStatus.outputDir || 'default'}</span>
+      </div>
+      <div className="status-row">
+        <span className="status-label">Notify URL:</span>
+        <span className="status-value small-font">{webhookStatus.notifyUrl || 'none'}</span>
+      </div>
+    </div>
+  ) : (
+    <p>Loading webhook status...</p>
+  )}
+</div> */}
+
+
+          <div className="card">
+            <h3><i className="fas fa-inbox"></i> {currentProvider} Email List</h3>
+            
+            {emails.length > 0 && (
+              <div className="table-controls">
+                <div className="select-all">
+                  <label className="checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={selectedEmails.length === emails.length && emails.length > 0}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedEmails(emails);
+                          showMessage(`Selected all ${emails.length} emails`, 'info');
+                        } else {
+                          setSelectedEmails([]);
+                          showMessage('Deselected all emails', 'info');
+                        }
+                      }}
+                    />
+                    <span className="checkbox-custom"></span>
+                    Select All ({emails.length} emails)
+                  </label>
+                </div>
+                
+                {selectedEmails.length > 0 && (
+                  <button 
+                    className="btn btn-success" 
+                    onClick={convertSelectedEmails}
+                    disabled={loading.convertSelected}
+                  >
+                    {loading.convertSelected ? (
+                      <>
+                        <span className="loading"></span>
+                        Converting...
+                      </>
+                    ) : (
+                      <>
+                        <i className="fas fa-file-pdf"></i>
+                        Convert {selectedEmails.length} Email{selectedEmails.length > 1 ? 's' : ''}
+                      </>
+                    )}
+                  </button>
                 )}
               </div>
             )}
+
+            <div className="email-table-container">
+              {emails.length === 0 ? (
+                <div className="empty-state">
+                  <i className="fas fa-envelope fa-3x"></i>
+                  <p>
+                    {loading.emails ? 
+                      'Loading emails...' : 
+                      `Click "Authenticate ${currentProvider}" to get started. Emails will auto-load after authentication.`
+                    }
+                  </p>
+                </div>
+              ) : (
+                <table className="email-table">
+                  <thead>
+                    <tr>
+                      <th className="select-column">
+                        <i className="fas fa-check"></i>
+                      </th>
+                      <th className="subject-column">Subject</th>
+                      <th className="from-column">From</th>
+                      <th className="date-column">Date</th>
+                      <th className="pdf-attachments-column">PDF Attachments</th>
+                      <th className="status-column">Merge Status</th>
+                      <th className="status-column">Separate Status</th>
+                      <th className="status-column">Attachment Only Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {emails.map((email) => {
+                      const isSelected = selectedEmails.find(e => e.messageId === email.messageId);
+                      const pdfCount = getPdfAttachmentCount(email.messageId);
+                      const mergeStatus = getConversionStatusDisplay(email.messageId, 'mainbody_with_attachment');
+                      const separateStatus = getConversionStatusDisplay(email.messageId, 'mainbody_separate_attachment');
+                      const attachmentOnlyStatus = getConversionStatusDisplay(email.messageId, 'attachment_only');
+                      const isLoading = loading.emailDetails;
+                      
+                      return (
+                        <tr key={email.messageId} className={`email-row ${isSelected ? 'selected' : ''}`}>
+                          <td className="select-column">
+                            <label className="checkbox-label">
+                              <input
+                                type="checkbox"
+                                checked={selectedEmails.some(e => e.messageId === email.messageId)}
+                                onChange={() => toggleEmailSelection(email)}
+                              />
+                              <span className="checkbox-custom"></span>
+                            </label>
+                          </td>
+                          <td className="subject-column">
+                            <div className="email-subject" title={email.subject || '(No subject)'}>
+                              {email.subject || '(No subject)'}
+                            </div>
+                            <div className="email-snippet">{email.snippet}</div>
+                          </td>
+                          <td className="from-column">
+                            <div className="email-from" title={email.from}>
+                              {email.from}
+                            </div>
+                          </td>
+                          <td className="date-column">
+                            <div className="email-date">
+                              {formatDate(email.date)}
+                            </div>
+                          </td>
+                          <td className="pdf-attachments-column">
+                            <div className="pdf-count">
+                              {isLoading ? (
+                                <span className="loading-small"></span>
+                              ) : (
+                                <>
+                                  <i className="fas fa-file-pdf"></i>
+                                  <span className="count">{pdfCount}</span>
+                                </>
+                              )}
+                            </div>
+                          </td>
+                          <td className="status-column">
+                            <span className={`status-badge ${mergeStatus.className}`}>
+                              {mergeStatus.text}
+                            </span>
+                          </td>
+                          <td className="status-column">
+                            <span className={`status-badge ${separateStatus.className}`}>
+                              {separateStatus.text}
+                            </span>
+                          </td>
+                          <td className="status-column">
+                            <span className={`status-badge ${attachmentOnlyStatus.className}`}>
+                              {attachmentOnlyStatus.text}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
           </div>
         </div>
       </div>
