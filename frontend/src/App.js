@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
-
-const API_BASE = 'http://localhost:3000/api';
+import { authApi, emailApi } from './api';
 
 function App() {
   const [emails, setEmails] = useState([]);
@@ -31,7 +30,7 @@ function App() {
 
   const loadProviders = async () => {
     try {
-      const result = await apiCall('/emails/providers');
+      const result = await emailApi.getProviders();
       if (result.success && result.data && result.data.providers) {
         setProviders(result.data.providers);
       } else {
@@ -48,7 +47,7 @@ function App() {
     if (!sessionId) return;
   
     try {
-      const res = await apiCall(`/emails/webhook/status?sessionId=${sessionId}`);
+      const res = await emailApi.getWebhookStatus(sessionId);
       if (res.success) {
         setWebhookStatus(res.data);
       } else {
@@ -71,14 +70,11 @@ function App() {
     try {
       setLoadingState('auth', true);
       
-      const endpoint = currentProvider === 'outlook' ? '/auth/outlook/start' : '/auth/gmail/start';
-      console.log('Requesting:', `${API_BASE}${endpoint}`); // 添加日志
+      const res = currentProvider === 'outlook' 
+        ? await authApi.startOutlookAuth() 
+        : await authApi.startGmailAuth();
       
-      const response = await fetch(`${API_BASE}${endpoint}`);
-      console.log('Response status:', response.status); // 添加日志
-      
-      const res = await response.json();
-      console.log('Response data:', res); // 添加日志
+      console.log('Response data:', res);
       
       if (res.authUrl && res.sessionId) {
         localStorage.setItem('sessionId', res.sessionId);
@@ -101,20 +97,12 @@ function App() {
       setLoadingState('convert', true);
       const sessionId = localStorage.getItem('sessionId');
   
-      const response = await fetch(`${API_BASE}/emails/auto-process`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          sessionId: sessionId,
-          provider: currentProvider,
-          maxEmails: 10,
-          pdfRule: processingSettings.pdfRule
-        })
-      });
-  
-      const res = await response.json();
+      const res = await emailApi.autoProcess(
+        sessionId,
+        currentProvider,
+        10,
+        processingSettings.pdfRule
+      );
   
       if (res.success && res.data.step === 'completed') {
         showMessage(`Successfully processed ${res.data.processedEmails} out of ${res.data.totalEmails} ${currentProvider} emails`, 'success');
@@ -194,20 +182,12 @@ function App() {
     try {
       const sessionId = localStorage.getItem('sessionId');
       
-      const response = await fetch(`${API_BASE}/emails/auto-process`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          sessionId: sessionId,
-          provider: currentProvider,
-          maxEmails: config.config.maxEmailsPerRun,
-          pdfRule: config.config.pdfRule
-        })
-      });
-
-      const res = await response.json();
+      const res = await emailApi.autoProcess(
+        sessionId,
+        currentProvider,
+        config.config.maxEmailsPerRun,
+        config.config.pdfRule
+      );
 
       if (res.success && res.data.step === 'completed') {
         showMessage(`Auto processed ${res.data.processedEmails} out of ${res.data.totalEmails} ${currentProvider} emails`, 'success');
@@ -301,28 +281,10 @@ function App() {
     setLoading(prev => ({ ...prev, [key]: state }));
   };
 
-  const apiCall = async (endpoint, options = {}) => {
-    try {
-      const response = await fetch(`${API_BASE}${endpoint}`, {
-        headers: {
-          'Content-Type': 'application/json',
-          ...options.headers
-        },
-        ...options
-      });
-      
-      const data = await response.json();
-      return data;
-    } catch (error) {
-      console.error('API call failed:', error);
-      showMessage(`Error: ${error.message}`, 'error');
-      throw error;
-    }
-  };
 
   const loadPdfRules = async () => {
     try {
-      const result = await apiCall('/emails/pdf-rules');
+      const result = await emailApi.getPdfRules();
       if (result.success && result.data && result.data.rules) {
         setPdfRules(result.data.rules);
       } else {
@@ -364,13 +326,13 @@ function App() {
       
       for (const email of emails) {
         try {
-          const detailResponse = await apiCall(`/emails/${email.messageId}?sessionId=${sessionId}&provider=${currentProvider}`);
+          const detailResponse = await emailApi.getEmailDetails(email.messageId, sessionId, currentProvider);
           if (detailResponse.success) {
             details[email.messageId] = detailResponse.data;
           }
 
           try {
-            const statusResponse = await apiCall(`/emails/${email.messageId}/processing-status?sessionId=${sessionId}`);
+            const statusResponse = await emailApi.getProcessingStatus(email.messageId, sessionId);
             if (statusResponse.success) {
               status[email.messageId] = statusResponse.data;
             } else {
@@ -405,7 +367,7 @@ function App() {
       
       for (const email of emails) {
         try {
-          const statusResponse = await apiCall(`/emails/${email.messageId}/processing-status?sessionId=${sessionId}`);
+          const statusResponse = await emailApi.getProcessingStatus(email.messageId, sessionId);
           if (statusResponse.success) {
             status[email.messageId] = statusResponse.data;
           } else {
@@ -441,15 +403,12 @@ function App() {
       });
       setConversionStatus(updatedStatus);
   
-      const result = await apiCall('/emails/convert-multiple', {
-        method: 'POST',
-        body: JSON.stringify({
-          sessionId,
-          provider: currentProvider,
-          messageIds: selectedEmails.map(e => e.messageId),
-          pdfRule: processingSettings.pdfRule
-        })
-      });
+      const result = await emailApi.convertMultiple(
+        sessionId,
+        currentProvider,
+        selectedEmails.map(e => e.messageId),
+        processingSettings.pdfRule
+      );
   
       if (result.success) {
         showMessage(`Converted ${result.data.length} ${currentProvider} email(s) successfully using ${getPdfRuleLabel(processingSettings.pdfRule)}.`, 'success');
@@ -518,7 +477,7 @@ function App() {
     }
   
     try {
-      const response = await apiCall(`/emails/list?sessionId=${sessionId}&provider=${currentProvider}&maxResults=20`);
+      const response = await emailApi.getEmailList(sessionId, currentProvider, 20);
       if (response.success) {
         setEmails(response.data.emails);
         showMessage(`Auto-loaded ${response.data.emails.length} ${currentProvider} emails`, 'success');
